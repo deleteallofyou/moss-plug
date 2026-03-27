@@ -1,8 +1,8 @@
 {
   "id": "lobster-status",
   "name": "Lobster Status Bridge",
-  "version": "0.1.0",
-  "description": "Expose OpenClaw runtime state for desktop pets and hardware displays.",
+  "version": "0.2.0",
+  "description": "Expose OpenClaw runtime state for desktop pets, browser UIs, and future hardware desk pets.",
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -10,11 +10,17 @@
       "enabled": { "type": "boolean", "default": true },
       "routePath": { "type": "string", "default": "/lobster/status" },
       "healthPath": { "type": "string", "default": "/lobster/health" },
+      "streamPath": { "type": "string", "default": "/lobster/stream" },
+      "deviceEventPath": { "type": "string", "default": "/lobster/device-event" },
       "readToken": { "type": "string" },
+      "writeToken": { "type": "string" },
       "thinkingTtlMs": { "type": "integer", "minimum": 1000, "default": 360000 },
       "replyingTtlMs": { "type": "integer", "minimum": 500, "default": 20000 },
       "stateFile": { "type": "string" },
-      "deviceName": { "type": "string", "default": "lobster-display" }
+      "deviceName": { "type": "string", "default": "lobster-display" },
+      "eventQueueLimit": { "type": "integer", "minimum": 1, "default": 100 },
+      "enableSse": { "type": "boolean", "default": true },
+      "writeLocalhostOnly": { "type": "boolean", "default": true }
     }
   }
 }

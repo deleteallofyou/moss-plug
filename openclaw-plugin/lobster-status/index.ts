@@ -1,9 +1,12 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { StateStore } from "./src/state-store.js";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import { normalizeDeviceEventPayload, isLocalhostAddress } from "./src/device-events.js";
 import { deriveStatus } from "./src/derive-state.js";
-import type { LobsterEventType, LobsterSnapshot } from "./src/types.js";
+import { SseBus } from "./src/sse-bus.js";
+import { StateStore } from "./src/state-store.js";
+import type { RuntimeEventType, RuntimeSnapshot } from "./src/types.js";
 
 function getTodayLogPath() {
   const now = new Date();
@@ -33,7 +36,7 @@ function readJsonLogMessage(line: string) {
   }
 }
 
-function inferSnapshotFromGatewayLog(): LobsterSnapshot | null {
+function inferSnapshotFromGatewayLog(): RuntimeSnapshot | null {
   const logPath = getTodayLogPath();
   if (!fs.existsSync(logPath)) {
     return null;
@@ -74,78 +77,148 @@ function inferSnapshotFromGatewayLog(): LobsterSnapshot | null {
   return null;
 }
 
+function readRequestBody(req: IncomingMessage, maxBytes = 8 * 1024) {
+  return new Promise<Record<string, unknown>>((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+
+    req.on("data", (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > maxBytes) {
+        reject(new Error("payload_too_large"));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+
+    req.on("end", () => {
+      try {
+        const raw = Buffer.concat(chunks).toString("utf8").trim();
+        resolve(raw ? JSON.parse(raw) : {});
+      } catch {
+        reject(new Error("invalid_json"));
+      }
+    });
+
+    req.on("error", reject);
+  });
+}
+
+function setCors(res: ServerResponse<IncomingMessage>) {
+  res.setHeader("access-control-allow-origin", "*");
+  res.setHeader("access-control-allow-methods", "GET, POST, OPTIONS");
+  res.setHeader("access-control-allow-headers", "authorization, content-type");
+  res.setHeader("access-control-max-age", "86400");
+}
+
+function sendJson(res: ServerResponse<IncomingMessage>, code: number, payload: unknown) {
+  setCors(res);
+  res.statusCode = code;
+  res.setHeader("content-type", "application/json; charset=utf-8");
+  res.setHeader("cache-control", "no-store");
+  res.end(JSON.stringify(payload));
+}
+
+function hasBearerToken(req: IncomingMessage, expected?: string) {
+  if (!expected) return true;
+  return req.headers.authorization === `Bearer ${expected}`;
+}
+
+function maybeHandleOptions(req: IncomingMessage, res: ServerResponse<IncomingMessage>) {
+  if (req.method !== "OPTIONS") return false;
+  setCors(res);
+  res.statusCode = 204;
+  res.end();
+  return true;
+}
+
 export default function register(api: any) {
   const pluginCfg = api?.config?.plugins?.entries?.["lobster-status"]?.config ?? {};
 
   const cfg = {
     routePath: pluginCfg.routePath || "/lobster/status",
     healthPath: pluginCfg.healthPath || "/lobster/health",
+    streamPath: pluginCfg.streamPath || "/lobster/stream",
+    deviceEventPath: pluginCfg.deviceEventPath || "/lobster/device-event",
     readToken: pluginCfg.readToken,
+    writeToken: pluginCfg.writeToken,
     thinkingTtlMs: pluginCfg.thinkingTtlMs || 6 * 60 * 1000,
     replyingTtlMs: pluginCfg.replyingTtlMs || 20 * 1000,
     stateFile: pluginCfg.stateFile,
     deviceName: pluginCfg.deviceName || "lobster-display",
+    eventQueueLimit: pluginCfg.eventQueueLimit || 100,
+    enableSse: pluginCfg.enableSse !== false,
+    writeLocalhostOnly: pluginCfg.writeLocalhostOnly !== false,
   };
 
   const store = new StateStore(cfg.stateFile);
+  const sseBus = cfg.enableSse ? new SseBus() : null;
 
-  function update(lastEvent: LobsterEventType, extra: Record<string, unknown> = {}) {
-    store.set({
+  function getStatusPayload() {
+    const state = store.getState();
+    const inferred = inferSnapshotFromGatewayLog();
+    const stored = state.runtimeSnapshot;
+
+    if (inferred && (!stored || inferred.ts >= stored.ts)) {
+      store.setRuntimeSnapshot(inferred);
+      return deriveStatus({ ...state, runtimeSnapshot: inferred }, cfg);
+    }
+
+    return deriveStatus(state, cfg);
+  }
+
+  function broadcastStatus() {
+    if (!sseBus) return;
+    sseBus.broadcast("status", getStatusPayload());
+  }
+
+  function updateRuntime(lastEvent: RuntimeEventType, extra: Partial<RuntimeSnapshot> = {}) {
+    store.setRuntimeSnapshot({
       lastEvent,
       ts: Date.now(),
       ...extra,
     });
-  }
-
-  function getSnapshot() {
-    const stored = store.get();
-    const inferred = inferSnapshotFromGatewayLog();
-
-    if (inferred && (!stored || inferred.ts >= stored.ts)) {
-      store.set(inferred);
-      return inferred;
-    }
-
-    return stored;
+    broadcastStatus();
   }
 
   api.registerHook("gateway:startup", async () => {
-    update("gateway:startup", { source: "plugin" });
+    updateRuntime("gateway:startup", { source: "plugin" });
   }, {
     name: "lobster-status.gateway-startup",
     description: "Seed status on gateway startup",
   });
 
   api.registerHook("message:received", async () => {
-    update("message:received", { source: "hook" });
+    updateRuntime("message:received", { source: "hook" });
   }, {
     name: "lobster-status.message-received",
     description: "Mark device as thinking on inbound message",
   });
 
   api.registerHook("message:sent", async () => {
-    update("message:sent", { source: "hook" });
+    updateRuntime("message:sent", { source: "hook" });
   }, {
     name: "lobster-status.message-sent",
     description: "Mark device as replying on outbound message",
   });
 
   api.registerHook("command:new", async () => {
-    update("command:new", { source: "command" });
+    updateRuntime("command:new", { source: "command" });
   }, {
     name: "lobster-status.command-new",
     description: "Reset to idle on /new",
   });
 
   api.registerHook("command:reset", async () => {
-    update("command:reset", { source: "command" });
+    updateRuntime("command:reset", { source: "command" });
   }, {
     name: "lobster-status.command-reset",
     description: "Reset to idle on /reset",
   });
 
   api.registerHook("command:stop", async () => {
-    update("command:stop", { source: "command" });
+    updateRuntime("command:stop", { source: "command" });
   }, {
     name: "lobster-status.command-stop",
     description: "Set sleeping on /stop",
@@ -155,22 +228,18 @@ export default function register(api: any) {
     path: cfg.routePath,
     auth: "plugin",
     match: "exact",
-    handler: async (req: any, res: any) => {
-      if (cfg.readToken) {
-        const auth = req.headers["authorization"];
-        if (auth !== `Bearer ${cfg.readToken}`) {
-          res.statusCode = 401;
-          res.setHeader("content-type", "application/json; charset=utf-8");
-          res.end(JSON.stringify({ error: "unauthorized" }));
-          return true;
-        }
+    handler: async (req: IncomingMessage, res: ServerResponse<IncomingMessage>) => {
+      if (maybeHandleOptions(req, res)) return true;
+      if (req.method !== "GET") {
+        sendJson(res, 405, { error: "method_not_allowed" });
+        return true;
+      }
+      if (!hasBearerToken(req, cfg.readToken)) {
+        sendJson(res, 401, { error: "unauthorized" });
+        return true;
       }
 
-      const payload = deriveStatus(getSnapshot(), cfg);
-      res.statusCode = 200;
-      res.setHeader("content-type", "application/json; charset=utf-8");
-      res.setHeader("cache-control", "no-store");
-      res.end(JSON.stringify(payload));
+      sendJson(res, 200, getStatusPayload());
       return true;
     },
   });
@@ -179,11 +248,121 @@ export default function register(api: any) {
     path: cfg.healthPath,
     auth: "plugin",
     match: "exact",
-    handler: async (_req: any, res: any) => {
-      res.statusCode = 200;
-      res.setHeader("content-type", "application/json; charset=utf-8");
-      res.end(JSON.stringify({ ok: true, plugin: "lobster-status", logPath: getTodayLogPath() }));
+    handler: async (req: IncomingMessage, res: ServerResponse<IncomingMessage>) => {
+      if (maybeHandleOptions(req, res)) return true;
+      if (req.method !== "GET") {
+        sendJson(res, 405, { error: "method_not_allowed" });
+        return true;
+      }
+
+      const state = store.getState();
+      sendJson(res, 200, {
+        ok: true,
+        plugin: "lobster-status",
+        version: "0.2.0",
+        stream: cfg.enableSse,
+        logPath: getTodayLogPath(),
+        stateFile: cfg.stateFile ?? null,
+        futureHardwareReady: true,
+        deviceCount: Object.keys(state.devices).length,
+        endpoints: {
+          status: cfg.routePath,
+          health: cfg.healthPath,
+          stream: cfg.streamPath,
+          deviceEvent: cfg.deviceEventPath,
+        },
+      });
       return true;
+    },
+  });
+
+  api.registerHttpRoute({
+    path: cfg.streamPath,
+    auth: "plugin",
+    match: "exact",
+    handler: async (req: IncomingMessage, res: ServerResponse<IncomingMessage>) => {
+      if (maybeHandleOptions(req, res)) return true;
+      if (req.method !== "GET") {
+        sendJson(res, 405, { error: "method_not_allowed" });
+        return true;
+      }
+      if (!cfg.enableSse) {
+        sendJson(res, 503, { error: "stream_disabled" });
+        return true;
+      }
+      if (!hasBearerToken(req, cfg.readToken)) {
+        sendJson(res, 401, { error: "unauthorized" });
+        return true;
+      }
+
+      setCors(res);
+      sseBus?.addClient(req, res, getStatusPayload());
+      return true;
+    },
+  });
+
+  api.registerHttpRoute({
+    path: cfg.deviceEventPath,
+    auth: "plugin",
+    match: "exact",
+    handler: async (req: IncomingMessage, res: ServerResponse<IncomingMessage>) => {
+      if (maybeHandleOptions(req, res)) return true;
+      if (req.method !== "POST") {
+        sendJson(res, 405, { error: "method_not_allowed" });
+        return true;
+      }
+
+      if (cfg.writeLocalhostOnly && !isLocalhostAddress(req.socket.remoteAddress)) {
+        sendJson(res, 403, { error: "localhost_only" });
+        return true;
+      }
+
+      if (!hasBearerToken(req, cfg.writeToken)) {
+        sendJson(res, 401, { error: "unauthorized" });
+        return true;
+      }
+
+      try {
+        const body = await readRequestBody(req);
+        const normalized = normalizeDeviceEventPayload(body);
+        if (!normalized.ok) {
+          sendJson(res, 400, { error: normalized.error });
+          return true;
+        }
+
+        store.addDeviceEvent(normalized.event, cfg.eventQueueLimit);
+        const status = getStatusPayload();
+
+        if (sseBus) {
+          sseBus.broadcast("device_event", {
+            id: normalized.event.id,
+            deviceId: normalized.event.deviceId,
+            event: normalized.event.event,
+            ts: new Date(normalized.event.ts).toISOString(),
+            meta: normalized.event.meta,
+          });
+          sseBus.broadcast("status", status);
+        }
+
+        sendJson(res, 200, {
+          ok: true,
+          accepted: true,
+          queued: true,
+          event: {
+            id: normalized.event.id,
+            deviceId: normalized.event.deviceId,
+            event: normalized.event.event,
+            ts: new Date(normalized.event.ts).toISOString(),
+          },
+          status,
+        });
+        return true;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const code = message === "payload_too_large" ? 413 : 400;
+        sendJson(res, code, { error: message });
+        return true;
+      }
     },
   });
 }

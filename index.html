@@ -368,7 +368,7 @@
           <span id="pillText">连接中...</span>
         </div>
 
-        <div class="face-wrap">
+        <div class="face-wrap" id="faceWrap">
           <div class="face" id="face">🌿</div>
         </div>
 
@@ -469,6 +469,7 @@
     ];
 
     const faceEl = document.getElementById('face');
+    const faceWrapEl = document.getElementById('faceWrap');
     const statusEl = document.getElementById('status');
     const messageEl = document.getElementById('message');
     const pillTextEl = document.getElementById('pillText');
@@ -487,6 +488,27 @@
     const resetButtonEl = document.getElementById('resetButton');
 
     let lastPayload = null;
+    let pollTimer = null;
+    let heartbeatTimer = null;
+    let streamSource = null;
+    let streamRetryTimer = null;
+
+    const DEVICE_ID_STORAGE_KEY = 'mossDesktopDeviceId';
+
+    function getDeviceId() {
+      try {
+        let existing = localStorage.getItem(DEVICE_ID_STORAGE_KEY);
+        if (!existing) {
+          existing = `moss-desktop-${Math.random().toString(36).slice(2, 10)}`;
+          localStorage.setItem(DEVICE_ID_STORAGE_KEY, existing);
+        }
+        return existing;
+      } catch {
+        return 'moss-desktop-browser';
+      }
+    }
+
+    const DEVICE_ID = getDeviceId();
 
     function updateClock() {
       const now = new Date();
@@ -528,6 +550,12 @@
         'command:stop': '进入休眠',
         'session:user_message': '会话收到新消息',
         'session:assistant_message': '会话完成回复',
+        'presence': '设备在场',
+        'button_click': '桌宠点击',
+        'wake': '桌宠唤醒',
+        'sleep': '桌宠休眠',
+        'heartbeat': '设备心跳',
+        'visibility_change': '界面可见性变化',
         'demo:tick': '自动演示',
         'offline': '离线'
       };
@@ -581,7 +609,9 @@
       messageEl.textContent = payload.message || '我在桌面待命。';
       pillTextEl.textContent = payload.pill || '在线 · 待命中';
       moodValueEl.textContent = payload.moodLabel ? `心情：${payload.moodLabel}` : '--';
-      const modeText = payload.bridgeStatus === 'live'
+      const liveStates = ['live', 'session-live'];
+      const isLiveBridge = liveStates.includes(payload.bridgeStatus) || payload.mode === 'openclaw-live';
+      const modeText = isLiveBridge
         ? `${payload.modeLabel || MODE_LABELS[payload.mode] || '--'} · 真联动`
         : `${payload.modeLabel || MODE_LABELS[payload.mode] || '--'} · 本地回退`;
       modeValueEl.textContent = modeText;
@@ -609,7 +639,8 @@
         online: false,
         pill: '离线 · 未连接',
         bg1: '#485563',
-        bg2: '#29323c'
+        bg2: '#29323c',
+        bridgeStatus: 'offline'
       });
     }
 
@@ -624,22 +655,23 @@
       }
     }
 
-    async function post(path, body = {}) {
+    async function post(path, body = {}, options = {}) {
       const res = await fetch(`${API_BASE}${path}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
+        ...options
       });
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }
-      const payload = await res.json();
-      renderPayload(payload);
+      return res.json();
     }
 
     async function setMode(mode) {
       try {
-        await post('/api/mode', { mode });
+        const payload = await post('/api/mode', { mode });
+        renderPayload(payload);
       } catch (error) {
         renderOffline(error instanceof Error ? error.message : '切换失败');
       }
@@ -647,7 +679,8 @@
 
     async function setState(state) {
       try {
-        await post('/api/state', { state });
+        const payload = await post('/api/state', { state });
+        renderPayload(payload);
       } catch (error) {
         renderOffline(error instanceof Error ? error.message : '设置失败');
       }
@@ -655,18 +688,138 @@
 
     async function fireEvent(event) {
       try {
-        await post('/api/event', { event });
+        const payload = await post('/api/event', { event });
+        renderPayload(payload);
       } catch (error) {
         renderOffline(error instanceof Error ? error.message : '模拟失败');
       }
     }
 
+    async function sendDeviceEvent(event, meta = {}) {
+      try {
+        const payload = await post('/api/device-event', {
+          deviceId: DEVICE_ID,
+          event,
+          meta,
+        });
+        if (payload?.status) {
+          renderPayload(payload.status);
+        }
+      } catch {
+        // device events are best-effort only
+      }
+    }
+
+    function stopPolling() {
+      if (!pollTimer) return;
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+
+    function startPolling() {
+      if (pollTimer) return;
+      fetchStatus();
+      pollTimer = setInterval(fetchStatus, 1500);
+    }
+
+    function clearStreamRetry() {
+      if (!streamRetryTimer) return;
+      clearTimeout(streamRetryTimer);
+      streamRetryTimer = null;
+    }
+
+    function disconnectStream() {
+      if (streamSource) {
+        streamSource.close();
+        streamSource = null;
+      }
+    }
+
+    function scheduleStreamReconnect() {
+      if (streamRetryTimer || location.protocol === 'file:' || !window.EventSource) return;
+      streamRetryTimer = setTimeout(() => {
+        streamRetryTimer = null;
+        connectStream();
+      }, 3000);
+    }
+
+    function connectStream() {
+      if (location.protocol === 'file:' || !window.EventSource) {
+        startPolling();
+        return;
+      }
+
+      disconnectStream();
+      clearStreamRetry();
+
+      try {
+        streamSource = new EventSource(`${API_BASE}/api/stream`);
+      } catch {
+        startPolling();
+        scheduleStreamReconnect();
+        return;
+      }
+
+      streamSource.onopen = () => {
+        stopPolling();
+      };
+
+      streamSource.addEventListener('status', (event) => {
+        try {
+          renderPayload(JSON.parse(event.data));
+        } catch {
+          // ignore malformed payloads
+        }
+      });
+
+      streamSource.addEventListener('device_event', (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          if (!lastPayload || !payload?.event) return;
+          eventValueEl.textContent = `${formatEventLabel(payload.event)} · 刚刚`;
+        } catch {
+          // ignore malformed payloads
+        }
+      });
+
+      streamSource.onerror = () => {
+        disconnectStream();
+        startPolling();
+        scheduleStreamReconnect();
+      };
+    }
+
+    function startHeartbeat() {
+      if (heartbeatTimer) return;
+      heartbeatTimer = setInterval(() => {
+        sendDeviceEvent('heartbeat', {
+          visibility: document.visibilityState,
+          source: 'index.html',
+        });
+      }, 30000);
+    }
+
     resetButtonEl.addEventListener('click', async () => {
       try {
-        await post('/api/reset');
+        const payload = await post('/api/reset');
+        renderPayload(payload);
       } catch (error) {
         renderOffline(error instanceof Error ? error.message : '重置失败');
       }
+    });
+
+    faceWrapEl?.addEventListener('click', () => {
+      sendDeviceEvent('button_click', {
+        action: 'pet_tap',
+        source: 'index.html',
+      });
+    });
+
+    document.addEventListener('visibilitychange', () => {
+      sendDeviceEvent('visibility_change', {
+        visibility: document.visibilityState,
+        source: 'index.html',
+      });
     });
 
     if (location.protocol === 'file:') {
@@ -676,8 +829,19 @@
     renderButtons();
     updateClock();
     setInterval(updateClock, 1000);
-    fetchStatus();
-    setInterval(fetchStatus, 1000);
+
+    if (location.protocol === 'file:') {
+      renderOffline('当前是直接打开 HTML 文件');
+    } else {
+      fetchStatus();
+      connectStream();
+      startHeartbeat();
+      sendDeviceEvent('wake', {
+        surface: 'browser',
+        source: 'index.html',
+        visibility: document.visibilityState,
+      });
+    }
   </script>
 </body>
 </html>

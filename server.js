@@ -1,4 +1,5 @@
 const http = require('node:http');
+const https = require('node:https');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
@@ -13,7 +14,10 @@ const STATE_FILE = path.join(DATA_DIR, 'state.json');
 const OPENCLAW_BASE_URL = process.env.OPENCLAW_BASE_URL || 'http://127.0.0.1:18789';
 const OPENCLAW_STATUS_PATH = process.env.OPENCLAW_STATUS_PATH || '/lobster/status';
 const OPENCLAW_HEALTH_PATH = process.env.OPENCLAW_HEALTH_PATH || '/lobster/health';
+const OPENCLAW_STREAM_PATH = process.env.OPENCLAW_STREAM_PATH || '/lobster/stream';
+const OPENCLAW_DEVICE_EVENT_PATH = process.env.OPENCLAW_DEVICE_EVENT_PATH || '/lobster/device-event';
 const OPENCLAW_READ_TOKEN = process.env.OPENCLAW_READ_TOKEN || '';
+const OPENCLAW_WRITE_TOKEN = process.env.OPENCLAW_WRITE_TOKEN || '';
 const OPENCLAW_SESSION_ROOT = process.env.OPENCLAW_SESSION_ROOT || path.join(os.homedir(), '.openclaw', 'agents', 'main', 'sessions');
 
 const MIME_TYPES = {
@@ -276,6 +280,105 @@ async function fetchOpenClawJson(routePath) {
   return response.json();
 }
 
+async function forwardDeviceEventToOpenClaw(body) {
+  const headers = {
+    accept: 'application/json',
+    'content-type': 'application/json; charset=utf-8',
+  };
+
+  if (OPENCLAW_WRITE_TOKEN) {
+    headers.authorization = `Bearer ${OPENCLAW_WRITE_TOKEN}`;
+  }
+
+  const response = await fetch(buildOpenClawUrl(OPENCLAW_DEVICE_EVENT_PATH), {
+    method: 'POST',
+    headers,
+    cache: 'no-store',
+    body: JSON.stringify(body || {}),
+  });
+
+  if (!response.ok) {
+    throw new Error(`OpenClaw HTTP ${response.status}`);
+  }
+
+  return response.json();
+}
+
+function proxyOpenClawStream(req, res) {
+  const target = new URL(buildOpenClawUrl(OPENCLAW_STREAM_PATH));
+  const client = target.protocol === 'https:' ? https : http;
+  const headers = {
+    accept: 'text/event-stream',
+    'cache-control': 'no-cache',
+  };
+
+  if (OPENCLAW_READ_TOKEN) {
+    headers.authorization = `Bearer ${OPENCLAW_READ_TOKEN}`;
+  }
+
+  const upstreamReq = client.request({
+    protocol: target.protocol,
+    hostname: target.hostname,
+    port: target.port,
+    path: `${target.pathname}${target.search}`,
+    method: 'GET',
+    headers,
+  }, (upstreamRes) => {
+    if (upstreamRes.statusCode !== 200) {
+      let errorBody = '';
+      upstreamRes.setEncoding('utf8');
+      upstreamRes.on('data', (chunk) => {
+        errorBody += chunk;
+      });
+      upstreamRes.on('end', () => {
+        sendJson(res, 502, {
+          error: 'stream_unavailable',
+          status: upstreamRes.statusCode,
+          message: errorBody || 'OpenClaw stream unavailable',
+        });
+      });
+      return;
+    }
+
+    res.writeHead(200, {
+      'content-type': upstreamRes.headers['content-type'] || 'text/event-stream; charset=utf-8',
+      'cache-control': 'no-store, no-transform',
+      connection: 'keep-alive',
+      'x-accel-buffering': 'no',
+    });
+
+    upstreamRes.on('data', (chunk) => res.write(chunk));
+    upstreamRes.on('end', () => res.end());
+    upstreamRes.on('error', (error) => {
+      if (!res.writableEnded) {
+        res.write(`event: bridge_error\ndata: ${JSON.stringify({ message: error.message })}\n\n`);
+        res.end();
+      }
+    });
+  });
+
+  upstreamReq.on('error', (error) => {
+    if (!res.headersSent) {
+      sendJson(res, 502, {
+        error: 'stream_proxy_failed',
+        message: error.message,
+      });
+      return;
+    }
+
+    if (!res.writableEnded) {
+      res.write(`event: bridge_error\ndata: ${JSON.stringify({ message: error.message })}\n\n`);
+      res.end();
+    }
+  });
+
+  req.on('close', () => {
+    upstreamReq.destroy();
+  });
+
+  upstreamReq.end();
+}
+
 function normalizeLiveStatus(payload) {
   const now = Date.now();
   const stateKey = payload?.state && STATE_META[payload.state] ? payload.state : 'error';
@@ -283,7 +386,7 @@ function normalizeLiveStatus(payload) {
   const title = payload?.title || meta.title;
 
   return {
-    version: 1,
+    version: Number(payload?.version || 2),
     deviceName: payload?.deviceName || 'moss-desktop',
     updatedAt: payload?.updatedAt || new Date(now).toISOString(),
     polledAt: new Date(now).toISOString(),
@@ -302,10 +405,18 @@ function normalizeLiveStatus(payload) {
     modeLabel: 'OpenClaw 实时联动',
     lastEvent: payload?.lastEvent || 'gateway:startup',
     ageMs: Number(payload?.ageMs || 0),
+    busyForMs: Number(payload?.busyForMs || payload?.ageMs || 0),
+    channel: payload?.channel,
+    conversationId: payload?.conversationId,
+    device: payload?.device || null,
+    lastDeviceEvent: payload?.lastDeviceEvent || null,
+    activeScene: payload?.activeScene || null,
     bridgeStatus: payload?.bridgeStatus || 'live',
     openclawBaseUrl: OPENCLAW_BASE_URL,
     openclawStatusPath: OPENCLAW_STATUS_PATH,
     openclawHealthPath: OPENCLAW_HEALTH_PATH,
+    openclawStreamPath: OPENCLAW_STREAM_PATH,
+    openclawDeviceEventPath: OPENCLAW_DEVICE_EVENT_PATH,
   };
 }
 
@@ -440,6 +551,8 @@ async function resolveHealthPayload() {
         baseUrl: OPENCLAW_BASE_URL,
         statusPath: OPENCLAW_STATUS_PATH,
         healthPath: OPENCLAW_HEALTH_PATH,
+        streamPath: OPENCLAW_STREAM_PATH,
+        deviceEventPath: OPENCLAW_DEVICE_EVENT_PATH,
         payload: liveHealth,
       },
     };
@@ -454,6 +567,8 @@ async function resolveHealthPayload() {
         baseUrl: OPENCLAW_BASE_URL,
         statusPath: OPENCLAW_STATUS_PATH,
         healthPath: OPENCLAW_HEALTH_PATH,
+        streamPath: OPENCLAW_STREAM_PATH,
+        deviceEventPath: OPENCLAW_DEVICE_EVENT_PATH,
         error: error instanceof Error ? error.message : String(error),
       },
     };
@@ -516,6 +631,25 @@ const server = http.createServer(async (req, res) => {
   try {
     if (req.method === 'GET' && pathname === '/api/status') {
       sendJson(res, 200, await resolveStatusPayload());
+      return;
+    }
+
+    if (req.method === 'GET' && pathname === '/api/stream') {
+      proxyOpenClawStream(req, res);
+      return;
+    }
+
+    if (req.method === 'POST' && pathname === '/api/device-event') {
+      const body = await readBody(req);
+      try {
+        sendJson(res, 200, await forwardDeviceEventToOpenClaw(body));
+      } catch (error) {
+        sendJson(res, 502, {
+          ok: false,
+          error: 'device_event_proxy_failed',
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
       return;
     }
 
