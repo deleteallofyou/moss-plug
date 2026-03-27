@@ -1,0 +1,20 @@
+{
+  "id": "lobster-status",
+  "name": "Lobster Status Bridge",
+  "version": "0.1.0",
+  "description": "Expose OpenClaw runtime state for desktop pets and hardware displays.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "enabled": { "type": "boolean", "default": true },
+      "routePath": { "type": "string", "default": "/lobster/status" },
+      "healthPath": { "type": "string", "default": "/lobster/health" },
+      "readToken": { "type": "string" },
+      "thinkingTtlMs": { "type": "integer", "minimum": 1000, "default": 360000 },
+      "replyingTtlMs": { "type": "integer", "minimum": 500, "default": 20000 },
+      "stateFile": { "type": "string" },
+      "deviceName": { "type": "string", "default": "lobster-display" }
+    }
+  }
+}

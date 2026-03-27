@@ -1,0 +1,8 @@
+{
+  "sourceMode": "event-sim",
+  "manualState": "idle",
+  "demoStartedAt": 1774533342436,
+  "lastEvent": "gateway:startup",
+  "lastEventTs": 1774533342436,
+  "deviceName": "moss-desktop"
+}

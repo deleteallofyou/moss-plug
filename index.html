@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>moss 桌面状态终端</title>
+  <style>
+    :root {
+      --bg1: #43cea2;
+      --bg2: #185a9d;
+      --card-bg: rgba(255,255,255,0.12);
+      --card-border: rgba(255,255,255,0.18);
+      --text-main: #ffffff;
+      --text-soft: rgba(255,255,255,0.84);
+      --text-faint: rgba(255,255,255,0.66);
+      --shadow: 0 24px 60px rgba(0,0,0,0.24);
+      --good: #8ff5bf;
+      --warn: #ffd56a;
+      --bad: #ff8a8a;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
+    }
+
+    body {
+      min-height: 100vh;
+      color: var(--text-main);
+      background: linear-gradient(135deg, var(--bg1), var(--bg2));
+      transition: background 0.8s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      overflow-x: hidden;
+    }
+
+    .app {
+      width: min(1180px, 100%);
+      display: grid;
+      grid-template-columns: 1.3fr 0.95fr;
+      gap: 20px;
+    }
+
+    .panel {
+      border-radius: 30px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      box-shadow: var(--shadow);
+    }
+
+    .main-panel {
+      min-height: 720px;
+      padding: 28px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .side-panel {
+      min-height: 720px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 20px;
+    }
+
+    .tagline {
+      font-size: 14px;
+      color: var(--text-faint);
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+    }
+
+    .title {
+      font-size: 30px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+    }
+
+    .subtitle {
+      margin-top: 10px;
+      font-size: 15px;
+      color: var(--text-soft);
+      line-height: 1.7;
+      max-width: 520px;
+    }
+
+    .clock {
+      text-align: right;
+      min-width: 180px;
+    }
+
+    .clock .time {
+      font-size: 30px;
+      font-weight: 800;
+    }
+
+    .clock .date {
+      margin-top: 6px;
+      font-size: 14px;
+      color: var(--text-soft);
+    }
+
+    .hero {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      gap: 18px;
+      padding: 10px 0 22px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 16px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.12);
+      color: var(--text-soft);
+      font-size: 14px;
+    }
+
+    .pill .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--good);
+      box-shadow: 0 0 14px rgba(143, 245, 191, 0.8);
+    }
+
+    .face-wrap {
+      width: 240px;
+      height: 240px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.12);
+      box-shadow: inset 0 0 28px rgba(255,255,255,0.08), 0 16px 42px rgba(0,0,0,0.18);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      animation: floaty 3.5s ease-in-out infinite;
+    }
+
+    .face {
+      font-size: 118px;
+      line-height: 1;
+      user-select: none;
+      filter: drop-shadow(0 6px 16px rgba(0,0,0,0.18));
+    }
+
+    @keyframes floaty {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-10px); }
+    }
+
+    .status {
+      font-size: 48px;
+      font-weight: 900;
+      letter-spacing: 1px;
+    }
+
+    .message {
+      width: min(560px, 100%);
+      font-size: 20px;
+      line-height: 1.8;
+      color: var(--text-soft);
+      min-height: 78px;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: auto;
+    }
+
+    .mini {
+      border-radius: 20px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.08);
+      padding: 16px;
+    }
+
+    .mini .label {
+      font-size: 13px;
+      color: var(--text-faint);
+      margin-bottom: 8px;
+    }
+
+    .mini .value {
+      font-size: 19px;
+      font-weight: 700;
+      line-height: 1.5;
+    }
+
+    .section-title {
+      font-size: 16px;
+      font-weight: 800;
+      color: var(--text-soft);
+      margin-bottom: 8px;
+    }
+
+    .helper {
+      font-size: 14px;
+      line-height: 1.7;
+      color: var(--text-faint);
+    }
+
+    .chips,
+    .buttons {
+      display: grid;
+      gap: 10px;
+    }
+
+    .chips {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .buttons.two {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .buttons.one {
+      grid-template-columns: 1fr;
+    }
+
+    button {
+      border: 0;
+      outline: none;
+      cursor: pointer;
+      border-radius: 16px;
+      padding: 14px 12px;
+      background: rgba(255,255,255,0.11);
+      color: var(--text-main);
+      font-size: 14px;
+      box-shadow: 0 8px 22px rgba(0,0,0,0.12);
+      transition: transform 0.15s ease, background 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    button:hover {
+      transform: translateY(-2px);
+      background: rgba(255,255,255,0.18);
+    }
+
+    button.active {
+      background: rgba(255,255,255,0.26);
+      box-shadow: 0 10px 28px rgba(0,0,0,0.18);
+    }
+
+    .note {
+      padding: 16px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.07);
+      border: 1px solid rgba(255,255,255,0.08);
+      font-size: 14px;
+      line-height: 1.8;
+      color: var(--text-soft);
+    }
+
+    .banner {
+      display: none;
+      margin-top: 18px;
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: rgba(255, 213, 106, 0.15);
+      border: 1px solid rgba(255, 213, 106, 0.28);
+      color: #fff1c7;
+      font-size: 14px;
+      line-height: 1.7;
+    }
+
+    .banner.show {
+      display: block;
+    }
+
+    .footer-text {
+      font-size: 13px;
+      color: var(--text-faint);
+    }
+
+    .ok { color: var(--good); }
+    .warn { color: var(--warn); }
+    .bad { color: var(--bad); }
+
+    @media (max-width: 980px) {
+      .app {
+        grid-template-columns: 1fr;
+      }
+
+      .main-panel,
+      .side-panel {
+        min-height: auto;
+      }
+
+      .meta-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 620px) {
+      .topbar {
+        flex-direction: column;
+      }
+
+      .clock {
+        text-align: left;
+      }
+
+      .chips,
+      .buttons.two {
+        grid-template-columns: 1fr;
+      }
+
+      .meta-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .status {
+        font-size: 38px;
+      }
+
+      .message {
+        font-size: 18px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <section class="panel main-panel">
+      <div class="topbar">
+        <div>
+          <div class="tagline">moss 桌面状态终端 · 无硬件初版</div>
+          <div class="title">数字管家 / 龙虾状态同步原型</div>
+          <div class="subtitle">
+            这版现在会 <strong>优先读取 OpenClaw 真状态</strong>；如果真状态接口暂时不可用，
+            才自动回退到本地模拟状态服务，所以你不用改打开方式也能平滑切到真联动。
+          </div>
+        </div>
+        <div class="clock">
+          <div class="time" id="time">--:--:--</div>
+          <div class="date" id="date">----/--/--</div>
+        </div>
+      </div>
+
+      <div class="banner" id="fileBanner">
+        你现在是直接双击打开的本地文件模式。要看完整联动版，请双击 <b>启动.bat</b>，然后在浏览器里打开<br />
+        <b>http://127.0.0.1:8848</b>
+      </div>
+
+      <div class="hero">
+        <div class="pill">
+          <span class="dot" id="pillDot"></span>
+          <span id="pillText">连接中...</span>
+        </div>
+
+        <div class="face-wrap">
+          <div class="face" id="face">🌿</div>
+        </div>
+
+        <div class="status" id="status">准备中</div>
+        <div class="message" id="message">正在尝试连接本地状态服务……</div>
+      </div>
+
+      <div class="meta-grid">
+        <div class="mini">
+          <div class="label">当前心情</div>
+          <div class="value" id="moodValue">--</div>
+        </div>
+        <div class="mini">
+          <div class="label">模式</div>
+          <div class="value" id="modeValue">--</div>
+        </div>
+        <div class="mini">
+          <div class="label">最近事件</div>
+          <div class="value" id="eventValue">--</div>
+        </div>
+        <div class="mini">
+          <div class="label">上次轮询</div>
+          <div class="value" id="updatedValue">--</div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="panel side-panel">
+      <div>
+        <div class="section-title">源模式切换</div>
+        <div class="helper">用来模拟未来不同的数据来源：自动演示、手动固定、事件驱动。</div>
+      </div>
+      <div class="chips" id="modeButtons"></div>
+
+      <div>
+        <div class="section-title">事件模拟</div>
+        <div class="helper">这部分就是未来插件 hook 最像的行为：收到消息、发送回复、停止、重置。</div>
+      </div>
+      <div class="buttons two" id="eventButtons"></div>
+
+      <div>
+        <div class="section-title">手动状态</div>
+        <div class="helper">方便你直接切页面效果，看看不同表情和配色是否顺眼。</div>
+      </div>
+      <div class="buttons two" id="stateButtons"></div>
+
+      <div class="buttons one">
+        <button id="resetButton">↺ 重置为默认状态</button>
+      </div>
+
+      <div class="note">
+        <div class="section-title">明天你重点看什么</div>
+        <div>
+          1. 这种 UI 方向顺不顺眼<br />
+          2. “事件模拟模式”是否像你要的真实状态逻辑<br />
+          3. 后面要不要把这个本地服务替换成 OpenClaw 插件接口
+        </div>
+      </div>
+
+      <div class="footer-text">
+        本地地址：<span class="ok">http://127.0.0.1:8848</span><br />
+        健康检查：<span class="ok">/api/health</span><br />
+        状态接口：<span class="ok">/api/status</span><br />
+        真联动源：默认优先读 <span class="ok">http://127.0.0.1:18789/lobster/status</span>
+      </div>
+    </aside>
+  </div>
+
+  <script>
+    const API_BASE = 'http://127.0.0.1:8848';
+    const MODE_LABELS = {
+      demo: '自动演示模式',
+      manual: '手动状态模式',
+      'event-sim': '事件模拟模式'
+    };
+
+    const MODES = [
+      { key: 'demo', label: '自动演示' },
+      { key: 'manual', label: '手动状态' },
+      { key: 'event-sim', label: '事件模拟' }
+    ];
+
+    const EVENTS = [
+      { key: 'gateway:startup', label: '上线启动' },
+      { key: 'message:received', label: '收到消息' },
+      { key: 'message:sent', label: '完成回复' },
+      { key: 'command:new', label: '新会话' },
+      { key: 'command:reset', label: '重置会话' },
+      { key: 'command:stop', label: '进入休眠' }
+    ];
+
+    const STATES = [
+      { key: 'idle', label: '😊 空闲中' },
+      { key: 'thinking', label: '🤔 思考中' },
+      { key: 'replying', label: '✍️ 回复中' },
+      { key: 'sleeping', label: '😴 休眠中' },
+      { key: 'error', label: '⚠️ 异常中' }
+    ];
+
+    const faceEl = document.getElementById('face');
+    const statusEl = document.getElementById('status');
+    const messageEl = document.getElementById('message');
+    const pillTextEl = document.getElementById('pillText');
+    const pillDotEl = document.getElementById('pillDot');
+    const moodValueEl = document.getElementById('moodValue');
+    const modeValueEl = document.getElementById('modeValue');
+    const eventValueEl = document.getElementById('eventValue');
+    const updatedValueEl = document.getElementById('updatedValue');
+    const timeEl = document.getElementById('time');
+    const dateEl = document.getElementById('date');
+    const fileBannerEl = document.getElementById('fileBanner');
+
+    const modeButtonsEl = document.getElementById('modeButtons');
+    const eventButtonsEl = document.getElementById('eventButtons');
+    const stateButtonsEl = document.getElementById('stateButtons');
+    const resetButtonEl = document.getElementById('resetButton');
+
+    let lastPayload = null;
+
+    function updateClock() {
+      const now = new Date();
+      timeEl.textContent = now.toLocaleTimeString('zh-CN', { hour12: false });
+      dateEl.textContent = now.toLocaleDateString('zh-CN', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        weekday: 'long'
+      });
+    }
+
+    function formatTime(isoString) {
+      if (!isoString) return '--';
+      const date = new Date(isoString);
+      return `${date.toLocaleTimeString('zh-CN', { hour12: false })}`;
+    }
+
+    function formatAge(ageMs) {
+      if (typeof ageMs !== 'number' || !Number.isFinite(ageMs) || ageMs < 0) return '--';
+      if (ageMs < 1000) return '刚刚';
+      const totalSeconds = Math.floor(ageMs / 1000);
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+      if (minutes <= 0) return `${seconds}秒前`;
+      if (minutes < 60) return `${minutes}分${seconds.toString().padStart(2, '0')}秒前`;
+      const hours = Math.floor(minutes / 60);
+      const remainMinutes = minutes % 60;
+      return `${hours}小时${remainMinutes}分钟前`;
+    }
+
+    function formatEventLabel(eventKey) {
+      const eventMap = {
+        'gateway:startup': '网关启动',
+        'message:received': '收到消息',
+        'message:sent': '完成回复',
+        'command:new': '新会话',
+        'command:reset': '重置会话',
+        'command:stop': '进入休眠',
+        'session:user_message': '会话收到新消息',
+        'session:assistant_message': '会话完成回复',
+        'demo:tick': '自动演示',
+        'offline': '离线'
+      };
+      return eventMap[eventKey] || eventKey || '--';
+    }
+
+    function renderButtons() {
+      MODES.forEach((mode) => {
+        const button = document.createElement('button');
+        button.textContent = mode.label;
+        button.dataset.mode = mode.key;
+        button.addEventListener('click', () => setMode(mode.key));
+        modeButtonsEl.appendChild(button);
+      });
+
+      EVENTS.forEach((event) => {
+        const button = document.createElement('button');
+        button.textContent = event.label;
+        button.dataset.event = event.key;
+        button.addEventListener('click', () => fireEvent(event.key));
+        eventButtonsEl.appendChild(button);
+      });
+
+      STATES.forEach((state) => {
+        const button = document.createElement('button');
+        button.textContent = state.label;
+        button.dataset.state = state.key;
+        button.addEventListener('click', () => setState(state.key));
+        stateButtonsEl.appendChild(button);
+      });
+    }
+
+    function setActiveButtons(payload) {
+      document.querySelectorAll('[data-mode]').forEach((el) => {
+        el.classList.toggle('active', el.dataset.mode === payload.mode);
+      });
+
+      if (payload.mode === 'manual') {
+        document.querySelectorAll('[data-state]').forEach((el) => {
+          el.classList.toggle('active', el.dataset.state === payload.state);
+        });
+      } else {
+        document.querySelectorAll('[data-state]').forEach((el) => el.classList.remove('active'));
+      }
+    }
+
+    function renderPayload(payload) {
+      lastPayload = payload;
+      faceEl.textContent = payload.emoji || '🌿';
+      statusEl.textContent = payload.title || '空闲中';
+      messageEl.textContent = payload.message || '我在桌面待命。';
+      pillTextEl.textContent = payload.pill || '在线 · 待命中';
+      moodValueEl.textContent = payload.moodLabel ? `心情：${payload.moodLabel}` : '--';
+      const modeText = payload.bridgeStatus === 'live'
+        ? `${payload.modeLabel || MODE_LABELS[payload.mode] || '--'} · 真联动`
+        : `${payload.modeLabel || MODE_LABELS[payload.mode] || '--'} · 本地回退`;
+      modeValueEl.textContent = modeText;
+      eventValueEl.textContent = `${formatEventLabel(payload.lastEvent)} · ${formatAge(payload.ageMs)}`;
+      updatedValueEl.textContent = formatTime(payload.polledAt || payload.updatedAt || new Date().toISOString());
+      document.body.style.background = `linear-gradient(135deg, ${payload.bg1 || '#43cea2'}, ${payload.bg2 || '#185a9d'})`;
+      pillDotEl.style.background = payload.online ? '#8ff5bf' : '#ff8a8a';
+      pillDotEl.style.boxShadow = payload.online
+        ? '0 0 14px rgba(143,245,191,0.8)'
+        : '0 0 14px rgba(255,138,138,0.8)';
+      setActiveButtons(payload);
+    }
+
+    function renderOffline(errorText = '本地状态服务未连接') {
+      renderPayload({
+        mode: 'offline',
+        modeLabel: '未连接',
+        state: 'offline',
+        title: '离线中',
+        message: `${errorText}。请先双击启动.bat。`,
+        emoji: '🫥',
+        moodLabel: '静默',
+        lastEvent: 'offline',
+        updatedAt: new Date().toISOString(),
+        online: false,
+        pill: '离线 · 未连接',
+        bg1: '#485563',
+        bg2: '#29323c'
+      });
+    }
+
+    async function fetchStatus() {
+      try {
+        const res = await fetch(`${API_BASE}/api/status`, { cache: 'no-store' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const payload = await res.json();
+        renderPayload(payload);
+      } catch (error) {
+        renderOffline(error instanceof Error ? error.message : '连接失败');
+      }
+    }
+
+    async function post(path, body = {}) {
+      const res = await fetch(`${API_BASE}${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const payload = await res.json();
+      renderPayload(payload);
+    }
+
+    async function setMode(mode) {
+      try {
+        await post('/api/mode', { mode });
+      } catch (error) {
+        renderOffline(error instanceof Error ? error.message : '切换失败');
+      }
+    }
+
+    async function setState(state) {
+      try {
+        await post('/api/state', { state });
+      } catch (error) {
+        renderOffline(error instanceof Error ? error.message : '设置失败');
+      }
+    }
+
+    async function fireEvent(event) {
+      try {
+        await post('/api/event', { event });
+      } catch (error) {
+        renderOffline(error instanceof Error ? error.message : '模拟失败');
+      }
+    }
+
+    resetButtonEl.addEventListener('click', async () => {
+      try {
+        await post('/api/reset');
+      } catch (error) {
+        renderOffline(error instanceof Error ? error.message : '重置失败');
+      }
+    });
+
+    if (location.protocol === 'file:') {
+      fileBannerEl.classList.add('show');
+    }
+
+    renderButtons();
+    updateClock();
+    setInterval(updateClock, 1000);
+    fetchStatus();
+    setInterval(fetchStatus, 1000);
+  </script>
+</body>
+</html>
