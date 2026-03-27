@@ -39,12 +39,15 @@ OpenClaw ↔ lobster-status 插件 ↔ 桌面前端 / 实体桌宠
 - `GET /lobster/status`
 
 返回 v2 状态载荷，兼容旧版基础字段，并补充：
-- `busyForMs`
+- `runtimeSnapshot`
+- `devices`
+- `recentDeviceEvents`
 - `device`
 - `lastDeviceEvent`
 - `activeScene`
-- `channel`
-- `conversationId`
+- `streamPath`
+- `deviceEventPath`
+- `sseEnabled`
 
 ### 2) 健康检查
 
@@ -63,22 +66,19 @@ SSE 事件：
 - `POST /lobster/device-event`
 
 首批白名单事件：
-- `presence`
-- `button_click`
-- `wake`
-- `sleep`
-- `heartbeat`
+- `page_load`
 - `visibility_change`
+- `pet_click`
+- `heartbeat`
 
 示例：
 
 ```json
 {
   "deviceId": "lobster-desktop-01",
-  "event": "button_click",
-  "meta": {
-    "action": "pet_tap"
-  }
+  "event": "pet_click",
+  "deviceName": "moss 桌面页",
+  "source": "index.html"
 }
 ```
 

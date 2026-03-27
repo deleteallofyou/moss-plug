@@ -44,10 +44,10 @@
 
 桌面页/浏览器页现在会回传轻量设备事件：
 
-- `wake`
+- `page_load`
 - `heartbeat`
 - `visibility_change`
-- `button_click`
+- `pet_click`
 
 对应接口：
 
@@ -64,7 +64,7 @@
 
 ## 本地桥接服务接口
 
-`server.js` 继续作为桥接层，供前端统一访问：
+`server.js` 继续作为可选桥接层，供前端统一访问：
 
 - `GET /api/status`：优先拉取 OpenClaw 真状态；失败时回退到本地模拟状态
 - `GET /api/health`：查看本地桥接和 OpenClaw 探测结果
@@ -73,7 +73,7 @@
 - `POST /api/device-event`：代理设备事件写入
 - `POST /api/mode` / `POST /api/state` / `POST /api/event`：保留本地模拟能力
 
-这样网页层不用直接处理 OpenClaw 的跨域和 token 细节。
+这样网页层既可以走本地桥接，也可以像当前 `index.html` 一样直接连接 OpenClaw 插件端点。
 
 ---
 

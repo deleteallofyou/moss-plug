@@ -94,7 +94,7 @@
       font-size: 15px;
       color: var(--text-soft);
       line-height: 1.7;
-      max-width: 520px;
+      max-width: 560px;
     }
 
     .clock {
@@ -111,6 +111,17 @@
       margin-top: 6px;
       font-size: 14px;
       color: var(--text-soft);
+    }
+
+    .banner {
+      margin-top: 18px;
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: var(--text-soft);
+      font-size: 14px;
+      line-height: 1.7;
     }
 
     .hero {
@@ -153,6 +164,7 @@
       align-items: center;
       justify-content: center;
       animation: floaty 3.5s ease-in-out infinite;
+      cursor: pointer;
     }
 
     .face {
@@ -205,6 +217,7 @@
       font-size: 19px;
       font-weight: 700;
       line-height: 1.5;
+      word-break: break-word;
     }
 
     .section-title {
@@ -220,47 +233,6 @@
       color: var(--text-faint);
     }
 
-    .chips,
-    .buttons {
-      display: grid;
-      gap: 10px;
-    }
-
-    .chips {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-
-    .buttons.two {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .buttons.one {
-      grid-template-columns: 1fr;
-    }
-
-    button {
-      border: 0;
-      outline: none;
-      cursor: pointer;
-      border-radius: 16px;
-      padding: 14px 12px;
-      background: rgba(255,255,255,0.11);
-      color: var(--text-main);
-      font-size: 14px;
-      box-shadow: 0 8px 22px rgba(0,0,0,0.12);
-      transition: transform 0.15s ease, background 0.2s ease, box-shadow 0.2s ease;
-    }
-
-    button:hover {
-      transform: translateY(-2px);
-      background: rgba(255,255,255,0.18);
-    }
-
-    button.active {
-      background: rgba(255,255,255,0.26);
-      box-shadow: 0 10px 28px rgba(0,0,0,0.18);
-    }
-
     .note {
       padding: 16px;
       border-radius: 18px;
@@ -271,25 +243,33 @@
       color: var(--text-soft);
     }
 
-    .banner {
-      display: none;
-      margin-top: 18px;
-      padding: 14px 16px;
-      border-radius: 16px;
-      background: rgba(255, 213, 106, 0.15);
-      border: 1px solid rgba(255, 213, 106, 0.28);
-      color: #fff1c7;
-      font-size: 14px;
-      line-height: 1.7;
+    .list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
     }
 
-    .banner.show {
+    .list-item {
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .list-item strong {
       display: block;
+      margin-bottom: 4px;
+      color: var(--text-main);
+    }
+
+    .muted {
+      color: var(--text-faint);
     }
 
     .footer-text {
       font-size: 13px;
       color: var(--text-faint);
+      line-height: 1.8;
     }
 
     .ok { color: var(--good); }
@@ -320,11 +300,6 @@
         text-align: left;
       }
 
-      .chips,
-      .buttons.two {
-        grid-template-columns: 1fr;
-      }
-
       .meta-grid {
         grid-template-columns: 1fr;
       }
@@ -344,11 +319,11 @@
     <section class="panel main-panel">
       <div class="topbar">
         <div>
-          <div class="tagline">moss 桌面状态终端 · 无硬件初版</div>
-          <div class="title">数字管家 / 龙虾状态同步原型</div>
+          <div class="tagline">moss 桌面状态终端 · lobster-status v0.2</div>
+          <div class="title">OpenClaw 实时状态桌面面板</div>
           <div class="subtitle">
-            这版现在会 <strong>优先读取 OpenClaw 真状态</strong>；如果真状态接口暂时不可用，
-            才自动回退到本地模拟状态服务，所以你不用改打开方式也能平滑切到真联动。
+            页面会优先连接 <strong>/lobster/stream</strong> 实时流；如果流不可用，就自动回退到
+            <strong>/lobster/status</strong> 轮询，并持续上报页面加载、可见性、点击和心跳事件。
           </div>
         </div>
         <div class="clock">
@@ -357,9 +332,9 @@
         </div>
       </div>
 
-      <div class="banner" id="fileBanner">
-        你现在是直接双击打开的本地文件模式。要看完整联动版，请双击 <b>启动.bat</b>，然后在浏览器里打开<br />
-        <b>http://127.0.0.1:8848</b>
+      <div class="banner" id="bannerText">
+        当前默认连接 <b>http://127.0.0.1:18789</b>。后面接实体小屏、物理桌宠或动作模组时，
+        也可以继续复用这一套状态与设备事件协议。
       </div>
 
       <div class="hero">
@@ -368,12 +343,12 @@
           <span id="pillText">连接中...</span>
         </div>
 
-        <div class="face-wrap" id="faceWrap">
+        <div class="face-wrap" id="faceWrap" title="点我会发送 pet_click 事件">
           <div class="face" id="face">🌿</div>
         </div>
 
         <div class="status" id="status">准备中</div>
-        <div class="message" id="message">正在尝试连接本地状态服务……</div>
+        <div class="message" id="message">正在尝试连接 OpenClaw 状态接口……</div>
       </div>
 
       <div class="meta-grid">
@@ -382,7 +357,7 @@
           <div class="value" id="moodValue">--</div>
         </div>
         <div class="mini">
-          <div class="label">模式</div>
+          <div class="label">传输模式</div>
           <div class="value" id="modeValue">--</div>
         </div>
         <div class="mini">
@@ -390,7 +365,7 @@
           <div class="value" id="eventValue">--</div>
         </div>
         <div class="mini">
-          <div class="label">上次轮询</div>
+          <div class="label">状态时间</div>
           <div class="value" id="updatedValue">--</div>
         </div>
       </div>
@@ -398,102 +373,122 @@
 
     <aside class="panel side-panel">
       <div>
-        <div class="section-title">源模式切换</div>
-        <div class="helper">用来模拟未来不同的数据来源：自动演示、手动固定、事件驱动。</div>
-      </div>
-      <div class="chips" id="modeButtons"></div>
-
-      <div>
-        <div class="section-title">事件模拟</div>
-        <div class="helper">这部分就是未来插件 hook 最像的行为：收到消息、发送回复、停止、重置。</div>
-      </div>
-      <div class="buttons two" id="eventButtons"></div>
-
-      <div>
-        <div class="section-title">手动状态</div>
-        <div class="helper">方便你直接切页面效果，看看不同表情和配色是否顺眼。</div>
-      </div>
-      <div class="buttons two" id="stateButtons"></div>
-
-      <div class="buttons one">
-        <button id="resetButton">↺ 重置为默认状态</button>
+        <div class="section-title">连接详情</div>
+        <div class="helper">状态读取和设备事件上报都直接走 OpenClaw 插件端点。</div>
       </div>
 
       <div class="note">
-        <div class="section-title">明天你重点看什么</div>
-        <div>
-          1. 这种 UI 方向顺不顺眼<br />
-          2. “事件模拟模式”是否像你要的真实状态逻辑<br />
-          3. 后面要不要把这个本地服务替换成 OpenClaw 插件接口
-        </div>
+        <div class="section-title">当前端点</div>
+        <div id="endpointValue">--</div>
+      </div>
+
+      <div class="note">
+        <div class="section-title">设备概览</div>
+        <div id="deviceSummary">--</div>
+      </div>
+
+      <div>
+        <div class="section-title">最近设备</div>
+        <div class="helper">按最后活跃时间排序。</div>
+      </div>
+      <div class="list" id="devicesList">
+        <div class="list-item muted">还没有设备事件。</div>
+      </div>
+
+      <div>
+        <div class="section-title">最近设备事件</div>
+        <div class="helper">来自页面加载、可见性切换、点击和心跳。</div>
+      </div>
+      <div class="list" id="eventsList">
+        <div class="list-item muted">还没有事件。</div>
       </div>
 
       <div class="footer-text">
-        本地地址：<span class="ok">http://127.0.0.1:8848</span><br />
-        健康检查：<span class="ok">/api/health</span><br />
-        状态接口：<span class="ok">/api/status</span><br />
-        真联动源：默认优先读 <span class="ok">http://127.0.0.1:18789/lobster/status</span>
+        OpenClaw 基址：<span class="ok">http://127.0.0.1:18789</span><br />
+        状态接口：<span class="ok">/lobster/status</span><br />
+        实时流：<span class="ok">/lobster/stream</span><br />
+        设备写入：<span class="ok">/lobster/device-event</span>
       </div>
     </aside>
   </div>
 
   <script>
-    const API_BASE = 'http://127.0.0.1:8848';
-    const MODE_LABELS = {
-      demo: '自动演示模式',
-      manual: '手动状态模式',
-      'event-sim': '事件模拟模式'
+    const API_BASE = '';
+    const DEFAULT_STATUS_PATH = '/api/status';
+    const DEFAULT_STREAM_PATH = '/api/stream';
+    const DEFAULT_DEVICE_EVENT_PATH = '/api/device-event';
+    const DEVICE_NAME = 'moss 桌面页';
+    const DEVICE_SOURCE = 'index.html';
+    const HEARTBEAT_MS = 30000;
+    const POLL_MS = 1500;
+    const STREAM_RETRY_MS = 3000;
+    const DEVICE_ID_STORAGE_KEY = 'mossDesktopDeviceId';
+
+    const STATUS_LABELS = {
+      idle: '空闲中',
+      thinking: '思考中',
+      replying: '回复中',
+      sleeping: '休眠中',
+      error: '异常中'
     };
 
-    const MODES = [
-      { key: 'demo', label: '自动演示' },
-      { key: 'manual', label: '手动状态' },
-      { key: 'event-sim', label: '事件模拟' }
-    ];
+    const MOOD_LABELS = {
+      calm: '平静',
+      focused: '专注',
+      bright: '明亮',
+      sleepy: '困倦',
+      alert: '警觉'
+    };
 
-    const EVENTS = [
-      { key: 'gateway:startup', label: '上线启动' },
-      { key: 'message:received', label: '收到消息' },
-      { key: 'message:sent', label: '完成回复' },
-      { key: 'command:new', label: '新会话' },
-      { key: 'command:reset', label: '重置会话' },
-      { key: 'command:stop', label: '进入休眠' }
-    ];
+    const EVENT_LABELS = {
+      'gateway:startup': '网关启动',
+      'message:received': '收到消息',
+      'message:sent': '完成回复',
+      'command:new': '新会话',
+      'command:reset': '重置会话',
+      'command:stop': '进入休眠',
+      wake: '设备唤醒',
+      visibility_change: '可见性变化',
+      button_click: '点击桌宠',
+      heartbeat: '设备心跳',
+      offline: '离线'
+    };
 
-    const STATES = [
-      { key: 'idle', label: '😊 空闲中' },
-      { key: 'thinking', label: '🤔 思考中' },
-      { key: 'replying', label: '✍️ 回复中' },
-      { key: 'sleeping', label: '😴 休眠中' },
-      { key: 'error', label: '⚠️ 异常中' }
-    ];
+    const STATE_THEME = {
+      idle: { emoji: '🌿', bg1: '#43cea2', bg2: '#185a9d' },
+      thinking: { emoji: '🤔', bg1: '#667eea', bg2: '#764ba2' },
+      replying: { emoji: '✍️', bg1: '#f6d365', bg2: '#fda085' },
+      sleeping: { emoji: '😴', bg1: '#434343', bg2: '#000000' },
+      error: { emoji: '⚠️', bg1: '#c94b4b', bg2: '#4b134f' },
+      offline: { emoji: '🫥', bg1: '#485563', bg2: '#29323c' }
+    };
 
-    const faceEl = document.getElementById('face');
-    const faceWrapEl = document.getElementById('faceWrap');
-    const statusEl = document.getElementById('status');
-    const messageEl = document.getElementById('message');
+    const timeEl = document.getElementById('time');
+    const dateEl = document.getElementById('date');
     const pillTextEl = document.getElementById('pillText');
     const pillDotEl = document.getElementById('pillDot');
+    const faceWrapEl = document.getElementById('faceWrap');
+    const faceEl = document.getElementById('face');
+    const statusEl = document.getElementById('status');
+    const messageEl = document.getElementById('message');
     const moodValueEl = document.getElementById('moodValue');
     const modeValueEl = document.getElementById('modeValue');
     const eventValueEl = document.getElementById('eventValue');
     const updatedValueEl = document.getElementById('updatedValue');
-    const timeEl = document.getElementById('time');
-    const dateEl = document.getElementById('date');
-    const fileBannerEl = document.getElementById('fileBanner');
+    const endpointValueEl = document.getElementById('endpointValue');
+    const deviceSummaryEl = document.getElementById('deviceSummary');
+    const devicesListEl = document.getElementById('devicesList');
+    const eventsListEl = document.getElementById('eventsList');
 
-    const modeButtonsEl = document.getElementById('modeButtons');
-    const eventButtonsEl = document.getElementById('eventButtons');
-    const stateButtonsEl = document.getElementById('stateButtons');
-    const resetButtonEl = document.getElementById('resetButton');
-
+    let statusPath = DEFAULT_STATUS_PATH;
+    let streamPath = DEFAULT_STREAM_PATH;
+    let deviceEventPath = DEFAULT_DEVICE_EVENT_PATH;
+    let transportMode = 'connecting';
     let lastPayload = null;
     let pollTimer = null;
     let heartbeatTimer = null;
     let streamSource = null;
     let streamRetryTimer = null;
-
-    const DEVICE_ID_STORAGE_KEY = 'mossDesktopDeviceId';
 
     function getDeviceId() {
       try {
@@ -510,6 +505,10 @@
 
     const DEVICE_ID = getDeviceId();
 
+    function endpointUrl(routePath) {
+      return `${API_BASE}${routePath}`;
+    }
+
     function updateClock() {
       const now = new Date();
       timeEl.textContent = now.toLocaleTimeString('zh-CN', { hour12: false });
@@ -523,8 +522,16 @@
 
     function formatTime(isoString) {
       if (!isoString) return '--';
-      const date = new Date(isoString);
-      return `${date.toLocaleTimeString('zh-CN', { hour12: false })}`;
+      const value = new Date(isoString);
+      if (Number.isNaN(value.getTime())) return '--';
+      return value.toLocaleTimeString('zh-CN', { hour12: false });
+    }
+
+    function formatDateTime(isoString) {
+      if (!isoString) return '--';
+      const value = new Date(isoString);
+      if (Number.isNaN(value.getTime())) return '--';
+      return value.toLocaleString('zh-CN', { hour12: false });
     }
 
     function formatAge(ageMs) {
@@ -540,173 +547,220 @@
       return `${hours}小时${remainMinutes}分钟前`;
     }
 
-    function formatEventLabel(eventKey) {
-      const eventMap = {
-        'gateway:startup': '网关启动',
-        'message:received': '收到消息',
-        'message:sent': '完成回复',
-        'command:new': '新会话',
-        'command:reset': '重置会话',
-        'command:stop': '进入休眠',
-        'session:user_message': '会话收到新消息',
-        'session:assistant_message': '会话完成回复',
-        'presence': '设备在场',
-        'button_click': '桌宠点击',
-        'wake': '桌宠唤醒',
-        'sleep': '桌宠休眠',
-        'heartbeat': '设备心跳',
-        'visibility_change': '界面可见性变化',
-        'demo:tick': '自动演示',
-        'offline': '离线'
-      };
-      return eventMap[eventKey] || eventKey || '--';
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
     }
 
-    function renderButtons() {
-      MODES.forEach((mode) => {
-        const button = document.createElement('button');
-        button.textContent = mode.label;
-        button.dataset.mode = mode.key;
-        button.addEventListener('click', () => setMode(mode.key));
-        modeButtonsEl.appendChild(button);
-      });
-
-      EVENTS.forEach((event) => {
-        const button = document.createElement('button');
-        button.textContent = event.label;
-        button.dataset.event = event.key;
-        button.addEventListener('click', () => fireEvent(event.key));
-        eventButtonsEl.appendChild(button);
-      });
-
-      STATES.forEach((state) => {
-        const button = document.createElement('button');
-        button.textContent = state.label;
-        button.dataset.state = state.key;
-        button.addEventListener('click', () => setState(state.key));
-        stateButtonsEl.appendChild(button);
-      });
+    function getTransportLabel() {
+      if (transportMode === 'sse') return 'SSE 实时流';
+      if (transportMode === 'polling') return '轮询回退';
+      return '连接中';
     }
 
-    function setActiveButtons(payload) {
-      document.querySelectorAll('[data-mode]').forEach((el) => {
-        el.classList.toggle('active', el.dataset.mode === payload.mode);
-      });
+    function getTheme(state, online = true) {
+      if (!online) return STATE_THEME.offline;
+      return STATE_THEME[state] || STATE_THEME.idle;
+    }
 
-      if (payload.mode === 'manual') {
-        document.querySelectorAll('[data-state]').forEach((el) => {
-          el.classList.toggle('active', el.dataset.state === payload.state);
-        });
-      } else {
-        document.querySelectorAll('[data-state]').forEach((el) => el.classList.remove('active'));
+    function getEventLabel(eventKey) {
+      return EVENT_LABELS[eventKey] || eventKey || '--';
+    }
+
+    function renderDevices(devices) {
+      const list = Array.isArray(devices)
+        ? devices
+        : (devices ? [devices] : (lastPayload?.device ? [lastPayload.device] : []));
+
+      if (!list.length) {
+        devicesListEl.innerHTML = '<div class="list-item muted">还没有设备事件。</div>';
+        return;
+      }
+
+      devicesListEl.innerHTML = list.slice(0, 5).map((device) => {
+        const visibility = device.visibility || (typeof device.visible === 'boolean'
+          ? (device.visible ? 'visible' : 'hidden')
+          : '未知');
+        return `
+          <div class="list-item">
+            <strong>${escapeHtml(device.deviceName || device.deviceId)}</strong>
+            <div>设备 ID：${escapeHtml(device.deviceId)}</div>
+            <div>状态：${escapeHtml(getEventLabel(device.lastEvent))}</div>
+            <div>可见性：${escapeHtml(String(visibility))}</div>
+            <div class="muted">最后活跃：${escapeHtml(formatDateTime(device.lastSeenAt))}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderRecentEvents(events) {
+      const list = Array.isArray(events)
+        ? events
+        : (events ? [events] : (lastPayload?.lastDeviceEvent ? [lastPayload.lastDeviceEvent] : []));
+
+      if (!list.length) {
+        eventsListEl.innerHTML = '<div class="list-item muted">还没有事件。</div>';
+        return;
+      }
+
+      eventsListEl.innerHTML = list.slice(0, 6).map((entry) => {
+        return `
+          <div class="list-item">
+            <strong>${escapeHtml(getEventLabel(entry.event))}</strong>
+            <div>设备：${escapeHtml(entry.deviceId)}</div>
+            <div class="muted">时间：${escapeHtml(formatDateTime(entry.ts))}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function updateEndpointPanel() {
+      endpointValueEl.innerHTML = [
+        `读取状态：<span class="ok">${escapeHtml(location.origin + endpointUrl(statusPath))}</span>`,
+        `实时流：<span class="ok">${escapeHtml(location.origin + endpointUrl(streamPath))}</span>`,
+        `设备写入：<span class="ok">${escapeHtml(location.origin + endpointUrl(deviceEventPath))}</span>`
+      ].join('<br />');
+    }
+
+    function updateDeviceSummary(payload) {
+      const primary = payload?.device;
+      const activeScene = payload?.activeScene?.label || payload?.activeScene?.id || payload?.activeScene?.scene || '未设置';
+      const deviceCount = primary ? 1 : (payload?.deviceCount ?? payload?.devices?.length ?? 0);
+      const lines = [
+        `当前传输：${escapeHtml(getTransportLabel())}`,
+        `设备数量：${escapeHtml(String(deviceCount))}`,
+        `活动场景：${escapeHtml(activeScene)}`,
+        `最近运行事件：${escapeHtml(getEventLabel(payload?.lastEvent))}`
+      ];
+
+      if (primary) {
+        lines.push(`主设备：${escapeHtml(primary.deviceName || primary.deviceId)}`);
+      }
+
+      deviceSummaryEl.innerHTML = lines.join('<br />');
+    }
+
+    function applyPayload(payload) {
+      if (!payload || typeof payload !== 'object') return;
+
+      lastPayload = payload;
+      streamPath = typeof payload.streamPath === 'string' ? payload.streamPath : streamPath;
+      deviceEventPath = typeof payload.deviceEventPath === 'string' ? payload.deviceEventPath : deviceEventPath;
+      statusPath = typeof payload.statusPath === 'string' ? payload.statusPath : statusPath;
+
+      const online = payload.online !== false;
+      const theme = getTheme(payload.state, online);
+
+      faceEl.textContent = theme.emoji;
+      statusEl.textContent = payload.title || STATUS_LABELS[payload.state] || '空闲中';
+      messageEl.textContent = payload.message || '我在桌面待命。';
+      pillTextEl.textContent = `${online ? '在线' : '离线'} · ${getTransportLabel()}`;
+      moodValueEl.textContent = MOOD_LABELS[payload.mood] || payload.mood || '--';
+      modeValueEl.textContent = getTransportLabel();
+      eventValueEl.textContent = `${getEventLabel(payload.lastEvent)} · ${formatAge(payload.ageMs)}`;
+      updatedValueEl.textContent = formatTime(payload.updatedAt);
+      document.body.style.background = `linear-gradient(135deg, ${theme.bg1}, ${theme.bg2})`;
+      pillDotEl.style.background = online ? '#8ff5bf' : '#ff8a8a';
+      pillDotEl.style.boxShadow = online
+        ? '0 0 14px rgba(143,245,191,0.8)'
+        : '0 0 14px rgba(255,138,138,0.8)';
+
+      updateEndpointPanel();
+      updateDeviceSummary(payload);
+      renderDevices(payload.devices);
+      renderRecentEvents(payload.recentDeviceEvents);
+
+      if (payload.sseEnabled === false) {
+        disconnectStream();
+        clearStreamRetry();
+        if (transportMode !== 'polling') {
+          transportMode = 'polling';
+        }
+        startPolling();
+      } else if (!streamSource && transportMode !== 'sse') {
+        scheduleStreamReconnect(600);
       }
     }
 
-    function renderPayload(payload) {
-      lastPayload = payload;
-      faceEl.textContent = payload.emoji || '🌿';
-      statusEl.textContent = payload.title || '空闲中';
-      messageEl.textContent = payload.message || '我在桌面待命。';
-      pillTextEl.textContent = payload.pill || '在线 · 待命中';
-      moodValueEl.textContent = payload.moodLabel ? `心情：${payload.moodLabel}` : '--';
-      const liveStates = ['live', 'session-live'];
-      const isLiveBridge = liveStates.includes(payload.bridgeStatus) || payload.mode === 'openclaw-live';
-      const modeText = isLiveBridge
-        ? `${payload.modeLabel || MODE_LABELS[payload.mode] || '--'} · 真联动`
-        : `${payload.modeLabel || MODE_LABELS[payload.mode] || '--'} · 本地回退`;
-      modeValueEl.textContent = modeText;
-      eventValueEl.textContent = `${formatEventLabel(payload.lastEvent)} · ${formatAge(payload.ageMs)}`;
-      updatedValueEl.textContent = formatTime(payload.polledAt || payload.updatedAt || new Date().toISOString());
-      document.body.style.background = `linear-gradient(135deg, ${payload.bg1 || '#43cea2'}, ${payload.bg2 || '#185a9d'})`;
-      pillDotEl.style.background = payload.online ? '#8ff5bf' : '#ff8a8a';
-      pillDotEl.style.boxShadow = payload.online
-        ? '0 0 14px rgba(143,245,191,0.8)'
-        : '0 0 14px rgba(255,138,138,0.8)';
-      setActiveButtons(payload);
-    }
-
-    function renderOffline(errorText = '本地状态服务未连接') {
-      renderPayload({
-        mode: 'offline',
-        modeLabel: '未连接',
-        state: 'offline',
-        title: '离线中',
-        message: `${errorText}。请先双击启动.bat。`,
-        emoji: '🫥',
-        moodLabel: '静默',
-        lastEvent: 'offline',
-        updatedAt: new Date().toISOString(),
-        online: false,
-        pill: '离线 · 未连接',
-        bg1: '#485563',
-        bg2: '#29323c',
-        bridgeStatus: 'offline'
-      });
+    function renderOffline(reason = 'OpenClaw 网关未连接') {
+      transportMode = pollTimer ? 'polling' : 'connecting';
+      const theme = getTheme('offline', false);
+      faceEl.textContent = theme.emoji;
+      statusEl.textContent = '离线中';
+      messageEl.textContent = `${reason}。请确认本地 OpenClaw 网关已启动。`;
+      pillTextEl.textContent = '离线 · 等待连接';
+      moodValueEl.textContent = '--';
+      modeValueEl.textContent = getTransportLabel();
+      eventValueEl.textContent = `${getEventLabel('offline')} · --`;
+      updatedValueEl.textContent = '--';
+      document.body.style.background = `linear-gradient(135deg, ${theme.bg1}, ${theme.bg2})`;
+      pillDotEl.style.background = '#ff8a8a';
+      pillDotEl.style.boxShadow = '0 0 14px rgba(255,138,138,0.8)';
+      updateEndpointPanel();
+      deviceSummaryEl.innerHTML = [
+        `当前传输：${escapeHtml(getTransportLabel())}`,
+        '设备数量：0',
+        '活动场景：未设置',
+        '最近运行事件：离线'
+      ].join('<br />');
+      devicesListEl.innerHTML = '<div class="list-item muted">等待设备重新连回。</div>';
+      eventsListEl.innerHTML = '<div class="list-item muted">等待新的设备事件。</div>';
     }
 
     async function fetchStatus() {
-      try {
-        const res = await fetch(`${API_BASE}/api/status`, { cache: 'no-store' });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const payload = await res.json();
-        renderPayload(payload);
-      } catch (error) {
-        renderOffline(error instanceof Error ? error.message : '连接失败');
-      }
-    }
-
-    async function post(path, body = {}, options = {}) {
-      const res = await fetch(`${API_BASE}${path}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        ...options
+      const response = await fetch(endpointUrl(statusPath), {
+        cache: 'no-store'
       });
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
       }
-      return res.json();
+
+      const payload = await response.json();
+      applyPayload(payload);
+      return payload;
     }
 
-    async function setMode(mode) {
-      try {
-        const payload = await post('/api/mode', { mode });
-        renderPayload(payload);
-      } catch (error) {
-        renderOffline(error instanceof Error ? error.message : '切换失败');
-      }
+    function buildDeviceEventPayload(eventName, extra = {}) {
+      return {
+        event: eventName,
+        deviceId: DEVICE_ID,
+        ts: Date.now(),
+        meta: {
+          deviceName: DEVICE_NAME,
+          source: DEVICE_SOURCE,
+          path: location.pathname || '/',
+          visibility: document.visibilityState,
+          ...extra
+        }
+      };
     }
 
-    async function setState(state) {
+    async function postDeviceEvent(eventName, extra = {}) {
       try {
-        const payload = await post('/api/state', { state });
-        renderPayload(payload);
-      } catch (error) {
-        renderOffline(error instanceof Error ? error.message : '设置失败');
-      }
-    }
-
-    async function fireEvent(event) {
-      try {
-        const payload = await post('/api/event', { event });
-        renderPayload(payload);
-      } catch (error) {
-        renderOffline(error instanceof Error ? error.message : '模拟失败');
-      }
-    }
-
-    async function sendDeviceEvent(event, meta = {}) {
-      try {
-        const payload = await post('/api/device-event', {
-          deviceId: DEVICE_ID,
-          event,
-          meta,
+        const response = await fetch(endpointUrl(deviceEventPath), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(buildDeviceEventPayload(eventName, extra)),
+          cache: 'no-store'
         });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const payload = await response.json();
         if (payload?.status) {
-          renderPayload(payload.status);
+          applyPayload(payload.status);
         }
       } catch {
-        // device events are best-effort only
+        // best-effort only
       }
     }
 
@@ -718,8 +772,18 @@
 
     function startPolling() {
       if (pollTimer) return;
-      fetchStatus();
-      pollTimer = setInterval(fetchStatus, 1500);
+      transportMode = 'polling';
+      if (lastPayload) {
+        applyPayload(lastPayload);
+      }
+      fetchStatus().catch((error) => {
+        renderOffline(error instanceof Error ? error.message : '连接失败');
+      });
+      pollTimer = setInterval(() => {
+        fetchStatus().catch((error) => {
+          renderOffline(error instanceof Error ? error.message : '连接失败');
+        });
+      }, POLL_MS);
     }
 
     function clearStreamRetry() {
@@ -729,22 +793,27 @@
     }
 
     function disconnectStream() {
-      if (streamSource) {
-        streamSource.close();
-        streamSource = null;
-      }
+      if (!streamSource) return;
+      streamSource.close();
+      streamSource = null;
     }
 
-    function scheduleStreamReconnect() {
-      if (streamRetryTimer || location.protocol === 'file:' || !window.EventSource) return;
+    function scheduleStreamReconnect(delay = STREAM_RETRY_MS) {
+      if (streamRetryTimer || streamSource || !window.EventSource) return;
+      if (lastPayload && lastPayload.sseEnabled === false) return;
       streamRetryTimer = setTimeout(() => {
         streamRetryTimer = null;
         connectStream();
-      }, 3000);
+      }, delay);
     }
 
     function connectStream() {
-      if (location.protocol === 'file:' || !window.EventSource) {
+      if (!window.EventSource) {
+        startPolling();
+        return;
+      }
+
+      if (lastPayload && lastPayload.sseEnabled === false) {
         startPolling();
         return;
       }
@@ -753,7 +822,7 @@
       clearStreamRetry();
 
       try {
-        streamSource = new EventSource(`${API_BASE}/api/stream`);
+        streamSource = new EventSource(endpointUrl(streamPath));
       } catch {
         startPolling();
         scheduleStreamReconnect();
@@ -761,12 +830,18 @@
       }
 
       streamSource.onopen = () => {
+        transportMode = 'sse';
         stopPolling();
+        if (lastPayload) {
+          applyPayload(lastPayload);
+        }
       };
 
       streamSource.addEventListener('status', (event) => {
         try {
-          renderPayload(JSON.parse(event.data));
+          transportMode = 'sse';
+          stopPolling();
+          applyPayload(JSON.parse(event.data));
         } catch {
           // ignore malformed payloads
         }
@@ -775,8 +850,8 @@
       streamSource.addEventListener('device_event', (event) => {
         try {
           const payload = JSON.parse(event.data);
-          if (!lastPayload || !payload?.event) return;
-          eventValueEl.textContent = `${formatEventLabel(payload.event)} · 刚刚`;
+          if (!payload?.event) return;
+          eventValueEl.textContent = `${getEventLabel(payload.event)} · 刚刚`;
         } catch {
           // ignore malformed payloads
         }
@@ -784,6 +859,7 @@
 
       streamSource.onerror = () => {
         disconnectStream();
+        transportMode = 'polling';
         startPolling();
         scheduleStreamReconnect();
       };
@@ -792,56 +868,43 @@
     function startHeartbeat() {
       if (heartbeatTimer) return;
       heartbeatTimer = setInterval(() => {
-        sendDeviceEvent('heartbeat', {
-          visibility: document.visibilityState,
-          source: 'index.html',
-        });
-      }, 30000);
+        postDeviceEvent('heartbeat');
+      }, HEARTBEAT_MS);
     }
 
-    resetButtonEl.addEventListener('click', async () => {
-      try {
-        const payload = await post('/api/reset');
-        renderPayload(payload);
-      } catch (error) {
-        renderOffline(error instanceof Error ? error.message : '重置失败');
-      }
-    });
-
-    faceWrapEl?.addEventListener('click', () => {
-      sendDeviceEvent('button_click', {
-        action: 'pet_tap',
-        source: 'index.html',
+    faceWrapEl.addEventListener('click', () => {
+      postDeviceEvent('button_click', {
+        action: 'pet_tap'
       });
     });
 
     document.addEventListener('visibilitychange', () => {
-      sendDeviceEvent('visibility_change', {
-        visibility: document.visibilityState,
-        source: 'index.html',
+      postDeviceEvent('visibility_change', {
+        visibility: document.visibilityState
       });
     });
 
-    if (location.protocol === 'file:') {
-      fileBannerEl.classList.add('show');
-    }
-
-    renderButtons();
     updateClock();
     setInterval(updateClock, 1000);
+    updateEndpointPanel();
+    renderOffline('正在连接 OpenClaw 网关');
 
-    if (location.protocol === 'file:') {
-      renderOffline('当前是直接打开 HTML 文件');
-    } else {
-      fetchStatus();
-      connectStream();
-      startHeartbeat();
-      sendDeviceEvent('wake', {
-        surface: 'browser',
-        source: 'index.html',
-        visibility: document.visibilityState,
+    startHeartbeat();
+    postDeviceEvent('wake');
+
+    fetchStatus()
+      .then((payload) => {
+        if (payload?.sseEnabled === false) {
+          startPolling();
+          return;
+        }
+        connectStream();
+      })
+      .catch((error) => {
+        renderOffline(error instanceof Error ? error.message : '连接失败');
+        startPolling();
+        scheduleStreamReconnect();
       });
-    }
   </script>
 </body>
 </html>
