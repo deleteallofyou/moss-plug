@@ -124,6 +124,7 @@
 
 ## 当前已完成（第一轮 MVP）
 - [x] 本地 bridge 增加聊天接口：`/api/chat/history`、`/api/chat/send`、`/api/chat/reset`
+- [x] 第二轮补上聊天实时流：`/api/chat/stream`，前端优先订阅 SSE、失败时再回退轮询
 - [x] 使用 OpenClaw Gateway helper 在本地 Node 侧转发桌宠消息
 - [x] 建立桌宠专用稳定会话 key，并支持“新会话”切换
 - [x] 前端加入基础聊天 UI：消息列表、输入框、发送按钮、新会话按钮

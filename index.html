@@ -588,6 +588,7 @@
     const DEFAULT_CHAT_HISTORY_PATH = '/api/chat/history';
     const DEFAULT_CHAT_SEND_PATH = '/api/chat/send';
     const DEFAULT_CHAT_RESET_PATH = '/api/chat/reset';
+    const DEFAULT_CHAT_STREAM_PATH = '/api/chat/stream';
     const DEVICE_NAME = 'moss 桌面页';
     const DEVICE_SOURCE = 'index.html';
     const HEARTBEAT_MS = 30000;
@@ -667,10 +668,13 @@
     let chatHistoryPath = DEFAULT_CHAT_HISTORY_PATH;
     let chatSendPath = DEFAULT_CHAT_SEND_PATH;
     let chatResetPath = DEFAULT_CHAT_RESET_PATH;
+    let chatStreamPath = DEFAULT_CHAT_STREAM_PATH;
     let transportMode = 'connecting';
     let lastPayload = null;
     let lastChatPayload = null;
     let chatPollTimer = null;
+    let chatStreamSource = null;
+    let chatStreamRetryTimer = null;
     let chatLoading = false;
     let pollTimer = null;
     let heartbeatTimer = null;
@@ -811,7 +815,8 @@
         `读取状态：<span class="ok">${escapeHtml(location.origin + endpointUrl(statusPath))}</span>`,
         `实时流：<span class="ok">${escapeHtml(location.origin + endpointUrl(streamPath))}</span>`,
         `设备写入：<span class="ok">${escapeHtml(location.origin + endpointUrl(deviceEventPath))}</span>`,
-        `聊天历史：<span class="ok">${escapeHtml(location.origin + endpointUrl(chatHistoryPath))}</span>`
+        `聊天历史：<span class="ok">${escapeHtml(location.origin + endpointUrl(chatHistoryPath))}</span>`,
+        `聊天实时流：<span class="ok">${escapeHtml(location.origin + endpointUrl(chatStreamPath))}</span>`
       ].join('<br />');
     }
 
@@ -830,6 +835,10 @@
 
     function renderChat(payload) {
       lastChatPayload = payload;
+      if (typeof payload?.chatHistoryPath === 'string') chatHistoryPath = payload.chatHistoryPath;
+      if (typeof payload?.chatSendPath === 'string') chatSendPath = payload.chatSendPath;
+      if (typeof payload?.chatResetPath === 'string') chatResetPath = payload.chatResetPath;
+      if (typeof payload?.chatStreamPath === 'string') chatStreamPath = payload.chatStreamPath;
       const messages = Array.isArray(payload?.messages) ? payload.messages : [];
       const sessionKey = payload?.sessionKey || '--';
       chatSessionBadgeEl.textContent = `session: ${sessionKey}`;
@@ -874,6 +883,78 @@
       const payload = await response.json();
       renderChat(payload);
       return payload;
+    }
+
+    function disconnectChatStream() {
+      if (!chatStreamSource) return;
+      chatStreamSource.close();
+      chatStreamSource = null;
+    }
+
+    function clearChatStreamRetry() {
+      if (!chatStreamRetryTimer) return;
+      clearTimeout(chatStreamRetryTimer);
+      chatStreamRetryTimer = null;
+    }
+
+    function scheduleChatStreamReconnect(delay = 2500) {
+      if (chatStreamRetryTimer || chatStreamSource || !window.EventSource) return;
+      chatStreamRetryTimer = setTimeout(() => {
+        chatStreamRetryTimer = null;
+        connectChatStream();
+      }, delay);
+    }
+
+    function connectChatStream() {
+      if (!window.EventSource) {
+        startChatPolling();
+        return;
+      }
+
+      disconnectChatStream();
+      clearChatStreamRetry();
+
+      try {
+        chatStreamSource = new EventSource(endpointUrl(chatStreamPath));
+      } catch {
+        startChatPolling();
+        scheduleChatStreamReconnect();
+        return;
+      }
+
+      chatStreamSource.onopen = () => {
+        stopChatPolling();
+        if (!lastChatPayload?.pending && lastChatPayload?.status !== 'error') {
+          chatStatusEl.textContent = '聊天实时流已连接';
+        }
+      };
+
+      chatStreamSource.addEventListener('chat', (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          renderChat(payload);
+          if (!payload?.pending) {
+            stopChatPolling();
+          }
+        } catch {
+          // ignore malformed payloads
+        }
+      });
+
+      chatStreamSource.addEventListener('chat_error', (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          chatStatusEl.textContent = `聊天实时流异常：${payload?.message || '未知错误'}`;
+        } catch {
+          chatStatusEl.textContent = '聊天实时流异常';
+        }
+      });
+
+      chatStreamSource.onerror = () => {
+        disconnectChatStream();
+        startChatPolling();
+        scheduleChatStreamReconnect();
+      };
     }
 
     function stopChatPolling() {
@@ -1196,6 +1277,7 @@
         await sendChatMessage(text);
         chatInputEl.value = '';
         await fetchChatHistory();
+        connectChatStream();
         startChatPolling();
         fetchStatus().catch(() => {});
       } catch (error) {
@@ -1213,6 +1295,7 @@
         chatStatusEl.textContent = '正在创建新的桌宠会话…';
         const payload = await resetChatSession();
         renderChat(payload);
+        connectChatStream();
       } catch (error) {
         chatStatusEl.textContent = `新会话创建失败：${error instanceof Error ? error.message : '未知错误'}`;
       } finally {
@@ -1258,6 +1341,7 @@
 
     fetchChatHistory()
       .then((payload) => {
+        connectChatStream();
         if (payload?.pending) {
           startChatPolling();
         }

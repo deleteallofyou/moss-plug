@@ -23,6 +23,8 @@ const OPENCLAW_CONFIG_FILE = process.env.OPENCLAW_CONFIG_FILE || path.join(os.ho
 const OPENCLAW_GATEWAY_HELPER = process.env.OPENCLAW_GATEWAY_HELPER || path.join(process.env.APPDATA || '', 'npm', 'node_modules', 'openclaw', 'dist', 'call-DTKTDk3E.js');
 const DESKTOP_CHAT_SESSION_KEY = process.env.DESKTOP_CHAT_SESSION_KEY || 'lobster:desktop';
 const CHAT_POLL_WINDOW_MS = 45 * 1000;
+const CHAT_STREAM_INTERVAL_MS = 1200;
+const CHAT_STREAM_HEARTBEAT_MS = 15000;
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -501,8 +503,9 @@ async function resolveChatHistoryPayload(limit = 24) {
 
   const latestSessionState = readRecentSessionMessageState(history?.sessionId);
   let pending = inferChatPending(history?.messages, visibleMessages);
-  const lastMessage = visibleMessages[visibleMessages.length - 1] || null;
-  let lastError = [...visibleMessages].reverse().find((entry) => entry.isError) || null;
+  let lastError = visibleMessages[visibleMessages.length - 1]?.isError
+    ? visibleMessages[visibleMessages.length - 1]
+    : null;
 
   if (latestSessionState?.kind === 'error') {
     pending = false;
@@ -520,6 +523,8 @@ async function resolveChatHistoryPayload(limit = 24) {
     }
   }
 
+  const lastMessage = visibleMessages[visibleMessages.length - 1] || null;
+
   return {
     ok: true,
     sessionKey,
@@ -530,7 +535,69 @@ async function resolveChatHistoryPayload(limit = 24) {
     lastMessage,
     lastError,
     messages: visibleMessages,
+    chatHistoryPath: '/api/chat/history',
+    chatSendPath: '/api/chat/send',
+    chatResetPath: '/api/chat/reset',
+    chatStreamPath: '/api/chat/stream',
   };
+}
+
+function writeSseEvent(res, eventName, payload) {
+  res.write(`event: ${eventName}\n`);
+  res.write(`data: ${JSON.stringify(payload)}\n\n`);
+}
+
+function streamChatSnapshots(req, res) {
+  res.writeHead(200, {
+    'content-type': 'text/event-stream; charset=utf-8',
+    'cache-control': 'no-store, no-transform',
+    connection: 'keep-alive',
+    'x-accel-buffering': 'no',
+  });
+
+  let closed = false;
+  let lastSignature = '';
+
+  const pushSnapshot = async () => {
+    if (closed) return;
+    try {
+      const payload = await resolveChatHistoryPayload(24);
+      const signature = JSON.stringify({
+        sessionKey: payload.sessionKey,
+        status: payload.status,
+        pending: payload.pending,
+        messageIds: payload.messages.map((entry) => entry.id),
+        lastError: payload.lastError?.id || null,
+      });
+
+      if (signature !== lastSignature) {
+        lastSignature = signature;
+        writeSseEvent(res, 'chat', payload);
+      }
+    } catch (error) {
+      writeSseEvent(res, 'chat_error', {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
+  const heartbeatTimer = setInterval(() => {
+    if (!closed) {
+      res.write(': keep-alive\n\n');
+    }
+  }, CHAT_STREAM_HEARTBEAT_MS);
+
+  const streamTimer = setInterval(() => {
+    pushSnapshot();
+  }, CHAT_STREAM_INTERVAL_MS);
+
+  pushSnapshot();
+
+  req.on('close', () => {
+    closed = true;
+    clearInterval(streamTimer);
+    clearInterval(heartbeatTimer);
+  });
 }
 
 async function sendChatMessage(message) {
@@ -969,6 +1036,11 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && pathname === '/api/chat/history') {
       const limit = requestUrl.searchParams.get('limit');
       sendJson(res, 200, await resolveChatHistoryPayload(limit ? Number(limit) : 24));
+      return;
+    }
+
+    if (req.method === 'GET' && pathname === '/api/chat/stream') {
+      streamChatSnapshots(req, res);
       return;
     }
 

@@ -45,6 +45,7 @@
 ### 3. v0.3 聊天 MVP
 当前已经新增：
 - `GET /api/chat/history`
+- `GET /api/chat/stream`
 - `POST /api/chat/send`
 - `POST /api/chat/reset`
 
@@ -114,6 +115,7 @@ node server.js
 
 聊天 API：
 - `GET /api/chat/history`
+- `GET /api/chat/stream`
 - `POST /api/chat/send`
 - `POST /api/chat/reset`
 
