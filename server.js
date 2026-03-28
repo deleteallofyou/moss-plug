@@ -520,21 +520,65 @@ function resolveSessionDrivenStatus() {
   });
 }
 
-async function resolveStatusPayload() {
-  const sessionPayload = resolveSessionDrivenStatus();
-  if (sessionPayload) {
-    return sessionPayload;
-  }
+function buildOfflineStatus(error) {
+  const now = Date.now();
+  const message = error instanceof Error ? error.message : String(error || 'OpenClaw unavailable');
 
+  return {
+    version: 2,
+    deviceName: 'lobster-display',
+    updatedAt: new Date(now).toISOString(),
+    polledAt: new Date(now).toISOString(),
+    serverTime: now,
+    online: false,
+    state: 'idle',
+    emoji: STATE_META.offline.emoji,
+    title: STATE_META.offline.title,
+    mood: STATE_META.offline.mood,
+    moodLabel: STATE_META.offline.moodLabel,
+    message: STATE_META.offline.message,
+    pill: STATE_META.offline.pill,
+    bg1: STATE_META.offline.bg1,
+    bg2: STATE_META.offline.bg2,
+    mode: 'offline',
+    modeLabel: 'OpenClaw 未连接',
+    lastEvent: 'offline',
+    ageMs: 0,
+    busyForMs: 0,
+    bridgeStatus: 'offline',
+    device: null,
+    devices: [],
+    deviceCount: 0,
+    lastDeviceEvent: null,
+    recentDeviceEvents: [],
+    activeScene: null,
+    sseEnabled: false,
+    streamPath: OPENCLAW_STREAM_PATH,
+    deviceEventPath: OPENCLAW_DEVICE_EVENT_PATH,
+    openclawBaseUrl: OPENCLAW_BASE_URL,
+    openclawStatusPath: OPENCLAW_STATUS_PATH,
+    openclawHealthPath: OPENCLAW_HEALTH_PATH,
+    openclawStreamPath: OPENCLAW_STREAM_PATH,
+    openclawDeviceEventPath: OPENCLAW_DEVICE_EVENT_PATH,
+    liveError: message,
+  };
+}
+
+async function resolveStatusPayload() {
   try {
     const livePayload = await fetchOpenClawJson(OPENCLAW_STATUS_PATH);
     return normalizeLiveStatus(livePayload);
   } catch (error) {
-    const fallback = deriveLocalStatus(loadStore());
-    return {
-      ...fallback,
-      liveError: error instanceof Error ? error.message : String(error),
-    };
+    const store = loadStore();
+    if (store.sourceMode === 'demo' || store.sourceMode === 'manual') {
+      const fallback = deriveLocalStatus(store);
+      return {
+        ...fallback,
+        liveError: error instanceof Error ? error.message : String(error),
+      };
+    }
+
+    return buildOfflineStatus(error);
   }
 }
 

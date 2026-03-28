@@ -66,7 +66,7 @@
 
 `server.js` 继续作为可选桥接层，供前端统一访问：
 
-- `GET /api/status`：优先拉取 OpenClaw 真状态；失败时回退到本地模拟状态
+- `GET /api/status`：优先拉取 OpenClaw 真状态；若上游未连通则显示离线；只有显式切到 `demo/manual` 时才回退到本地模拟状态
 - `GET /api/health`：查看本地桥接和 OpenClaw 探测结果
 - `GET /api/bridge`：桥接详情
 - `GET /api/stream`：代理 OpenClaw SSE 状态流
@@ -89,7 +89,7 @@
 
 - `http://127.0.0.1:8848`
 
-如果 OpenClaw 还没接好，页面会自动回退到本地模拟状态。
+如果 OpenClaw 还没接好，页面默认会显示离线；要演示本地模拟状态时，再用 `/api/mode` 切到 `demo` 或 `manual`。
 
 ---
 
