@@ -272,6 +272,148 @@
       line-height: 1.8;
     }
 
+    .chat-panel {
+      padding: 16px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.1);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 320px;
+    }
+
+    .chat-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 13px;
+      color: var(--text-soft);
+    }
+
+    .chat-log {
+      flex: 1;
+      min-height: 220px;
+      max-height: 360px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding-right: 4px;
+    }
+
+    .chat-empty {
+      padding: 16px;
+      border-radius: 14px;
+      background: rgba(255,255,255,0.05);
+      color: var(--text-faint);
+      line-height: 1.8;
+    }
+
+    .chat-bubble {
+      max-width: 92%;
+      padding: 12px 14px;
+      border-radius: 16px;
+      line-height: 1.7;
+      white-space: pre-wrap;
+      word-break: break-word;
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .chat-bubble.user {
+      align-self: flex-end;
+      background: rgba(255,255,255,0.16);
+    }
+
+    .chat-bubble.assistant {
+      align-self: flex-start;
+      background: rgba(0,0,0,0.14);
+    }
+
+    .chat-bubble.system {
+      align-self: center;
+      background: rgba(255,255,255,0.06);
+      color: var(--text-faint);
+      font-size: 13px;
+    }
+
+    .chat-meta {
+      margin-top: 6px;
+      font-size: 12px;
+      color: var(--text-faint);
+    }
+
+    .chat-form {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .chat-input {
+      width: 100%;
+      min-height: 96px;
+      resize: vertical;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 14px;
+      background: rgba(0,0,0,0.12);
+      color: var(--text-main);
+      padding: 12px 14px;
+      font-size: 14px;
+      line-height: 1.7;
+      outline: none;
+    }
+
+    .chat-input::placeholder {
+      color: rgba(255,255,255,0.5);
+    }
+
+    .chat-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .chat-status {
+      font-size: 13px;
+      color: var(--text-soft);
+    }
+
+    .chat-buttons {
+      display: flex;
+      gap: 10px;
+    }
+
+    .chat-button {
+      border: 0;
+      border-radius: 999px;
+      padding: 10px 16px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 700;
+      color: #112233;
+      background: #ffffff;
+      transition: transform 0.15s ease, opacity 0.15s ease;
+    }
+
+    .chat-button:hover {
+      transform: translateY(-1px);
+    }
+
+    .chat-button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .chat-button.secondary {
+      background: rgba(255,255,255,0.14);
+      color: var(--text-main);
+      border: 1px solid rgba(255,255,255,0.12);
+    }
+
     .ok { color: var(--good); }
     .warn { color: var(--warn); }
     .bad { color: var(--bad); }
@@ -319,11 +461,11 @@
     <section class="panel main-panel">
       <div class="topbar">
         <div>
-          <div class="tagline">moss 桌面状态终端 · lobster-status v0.2</div>
-          <div class="title">OpenClaw 实时状态桌面面板</div>
+          <div class="tagline">moss 桌面状态终端 · lobster-status v0.3 MVP</div>
+          <div class="title">OpenClaw 状态 + 桌宠聊天面板</div>
           <div class="subtitle">
             页面会优先连接 <strong>/lobster/stream</strong> 实时流；如果流不可用，就自动回退到
-            <strong>/lobster/status</strong> 轮询，并持续上报页面加载、可见性、点击和心跳事件。
+            <strong>/lobster/status</strong> 轮询。同时右侧聊天面板会通过本地 bridge 把消息送进桌宠专用会话。
           </div>
         </div>
         <div class="clock">
@@ -374,7 +516,32 @@
     <aside class="panel side-panel">
       <div>
         <div class="section-title">连接详情</div>
-        <div class="helper">状态读取和设备事件上报都直接走 OpenClaw 插件端点。</div>
+        <div class="helper">状态读取和设备事件上报走本地 bridge；聊天也从这里进 OpenClaw。</div>
+      </div>
+
+      <div class="chat-panel">
+        <div class="chat-toolbar">
+          <div>
+            <div class="section-title" style="margin-bottom:4px;">v0.3 桌宠聊天 MVP</div>
+            <div class="helper">通过本地 bridge 把消息送进小龙虾专用会话。</div>
+          </div>
+          <div id="chatSessionBadge" class="muted">session: --</div>
+        </div>
+
+        <div class="chat-log" id="chatLog">
+          <div class="chat-empty">还没有聊天记录。给小龙虾发一句话试试。</div>
+        </div>
+
+        <form class="chat-form" id="chatForm">
+          <textarea id="chatInput" class="chat-input" placeholder="想对小龙虾说什么？支持多轮对话。"></textarea>
+          <div class="chat-actions">
+            <div class="chat-status" id="chatStatus">聊天桥接待命中</div>
+            <div class="chat-buttons">
+              <button type="button" class="chat-button secondary" id="chatResetButton">新会话</button>
+              <button type="submit" class="chat-button" id="chatSendButton">发送</button>
+            </div>
+          </div>
+        </form>
       </div>
 
       <div class="note">
@@ -407,7 +574,8 @@
         OpenClaw 基址：<span class="ok">http://127.0.0.1:18789</span><br />
         状态接口：<span class="ok">/lobster/status</span><br />
         实时流：<span class="ok">/lobster/stream</span><br />
-        设备写入：<span class="ok">/lobster/device-event</span>
+        设备写入：<span class="ok">/lobster/device-event</span><br />
+        聊天桥接：<span class="ok">/api/chat/history</span> / <span class="ok">/api/chat/send</span>
       </div>
     </aside>
   </div>
@@ -417,6 +585,9 @@
     const DEFAULT_STATUS_PATH = '/api/status';
     const DEFAULT_STREAM_PATH = '/api/stream';
     const DEFAULT_DEVICE_EVENT_PATH = '/api/device-event';
+    const DEFAULT_CHAT_HISTORY_PATH = '/api/chat/history';
+    const DEFAULT_CHAT_SEND_PATH = '/api/chat/send';
+    const DEFAULT_CHAT_RESET_PATH = '/api/chat/reset';
     const DEVICE_NAME = 'moss 桌面页';
     const DEVICE_SOURCE = 'index.html';
     const HEARTBEAT_MS = 30000;
@@ -482,12 +653,25 @@
     const deviceSummaryEl = document.getElementById('deviceSummary');
     const devicesListEl = document.getElementById('devicesList');
     const eventsListEl = document.getElementById('eventsList');
+    const chatLogEl = document.getElementById('chatLog');
+    const chatFormEl = document.getElementById('chatForm');
+    const chatInputEl = document.getElementById('chatInput');
+    const chatStatusEl = document.getElementById('chatStatus');
+    const chatSendButtonEl = document.getElementById('chatSendButton');
+    const chatResetButtonEl = document.getElementById('chatResetButton');
+    const chatSessionBadgeEl = document.getElementById('chatSessionBadge');
 
     let statusPath = DEFAULT_STATUS_PATH;
     let streamPath = DEFAULT_STREAM_PATH;
     let deviceEventPath = DEFAULT_DEVICE_EVENT_PATH;
+    let chatHistoryPath = DEFAULT_CHAT_HISTORY_PATH;
+    let chatSendPath = DEFAULT_CHAT_SEND_PATH;
+    let chatResetPath = DEFAULT_CHAT_RESET_PATH;
     let transportMode = 'connecting';
     let lastPayload = null;
+    let lastChatPayload = null;
+    let chatPollTimer = null;
+    let chatLoading = false;
     let pollTimer = null;
     let heartbeatTimer = null;
     let syncTimer = null;
@@ -626,8 +810,122 @@
       endpointValueEl.innerHTML = [
         `读取状态：<span class="ok">${escapeHtml(location.origin + endpointUrl(statusPath))}</span>`,
         `实时流：<span class="ok">${escapeHtml(location.origin + endpointUrl(streamPath))}</span>`,
-        `设备写入：<span class="ok">${escapeHtml(location.origin + endpointUrl(deviceEventPath))}</span>`
+        `设备写入：<span class="ok">${escapeHtml(location.origin + endpointUrl(deviceEventPath))}</span>`,
+        `聊天历史：<span class="ok">${escapeHtml(location.origin + endpointUrl(chatHistoryPath))}</span>`
       ].join('<br />');
+    }
+
+    function formatChatTimestamp(value) {
+      if (!value) return '--';
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return '--';
+      return date.toLocaleTimeString('zh-CN', { hour12: false });
+    }
+
+    function setChatBusy(isBusy) {
+      chatLoading = isBusy;
+      chatSendButtonEl.disabled = isBusy;
+      chatResetButtonEl.disabled = isBusy;
+    }
+
+    function renderChat(payload) {
+      lastChatPayload = payload;
+      const messages = Array.isArray(payload?.messages) ? payload.messages : [];
+      const sessionKey = payload?.sessionKey || '--';
+      chatSessionBadgeEl.textContent = `session: ${sessionKey}`;
+
+      if (!messages.length) {
+        chatLogEl.innerHTML = '<div class="chat-empty">还没有聊天记录。给小龙虾发一句话试试。</div>';
+      } else {
+        chatLogEl.innerHTML = messages.map((entry) => {
+          const roleLabel = entry.role === 'user'
+            ? '你'
+            : (entry.role === 'assistant' ? '小龙虾' : '系统');
+          return `
+            <div class="chat-bubble ${escapeHtml(entry.role)}">
+              <div>${escapeHtml(entry.text)}</div>
+              <div class="chat-meta">${escapeHtml(roleLabel)} · ${escapeHtml(formatChatTimestamp(entry.timestamp))}</div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      if (payload?.pending) {
+        chatLogEl.insertAdjacentHTML('beforeend', '<div class="chat-bubble assistant">正在思考中…<div class="chat-meta">小龙虾 · 实时处理中</div></div>');
+      }
+
+      chatLogEl.scrollTop = chatLogEl.scrollHeight;
+      chatStatusEl.textContent = payload?.pending
+        ? '小龙虾正在思考 / 回复…'
+        : (payload?.status === 'error'
+          ? (payload?.lastError?.text || '本轮回复失败，请再试一次')
+          : '聊天桥接待命中');
+    }
+
+    async function fetchChatHistory() {
+      const response = await fetch(`${endpointUrl(chatHistoryPath)}?limit=24`, {
+        cache: 'no-store'
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const payload = await response.json();
+      renderChat(payload);
+      return payload;
+    }
+
+    function stopChatPolling() {
+      if (!chatPollTimer) return;
+      clearInterval(chatPollTimer);
+      chatPollTimer = null;
+    }
+
+    function startChatPolling() {
+      if (chatPollTimer) return;
+      chatPollTimer = setInterval(async () => {
+        try {
+          const payload = await fetchChatHistory();
+          if (payload?.pending) return;
+          stopChatPolling();
+        } catch {
+          // 忽略聊天轮询失败，避免影响主状态面板
+        }
+      }, 2200);
+    }
+
+    async function sendChatMessage(text) {
+      const response = await fetch(endpointUrl(chatSendPath), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        cache: 'no-store',
+        body: JSON.stringify({ message: text })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      return response.json();
+    }
+
+    async function resetChatSession() {
+      const response = await fetch(endpointUrl(chatResetPath), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        cache: 'no-store'
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      return response.json();
     }
 
     function updateDeviceSummary(payload) {
@@ -887,6 +1185,41 @@
       }, SSE_SYNC_MS);
     }
 
+    chatFormEl.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const text = chatInputEl.value.trim();
+      if (!text || chatLoading) return;
+
+      try {
+        setChatBusy(true);
+        chatStatusEl.textContent = '正在把消息送给小龙虾…';
+        await sendChatMessage(text);
+        chatInputEl.value = '';
+        await fetchChatHistory();
+        startChatPolling();
+        fetchStatus().catch(() => {});
+      } catch (error) {
+        chatStatusEl.textContent = `发送失败：${error instanceof Error ? error.message : '未知错误'}`;
+      } finally {
+        setChatBusy(false);
+      }
+    });
+
+    chatResetButtonEl.addEventListener('click', async () => {
+      if (chatLoading) return;
+      try {
+        setChatBusy(true);
+        stopChatPolling();
+        chatStatusEl.textContent = '正在创建新的桌宠会话…';
+        const payload = await resetChatSession();
+        renderChat(payload);
+      } catch (error) {
+        chatStatusEl.textContent = `新会话创建失败：${error instanceof Error ? error.message : '未知错误'}`;
+      } finally {
+        setChatBusy(false);
+      }
+    });
+
     faceWrapEl.addEventListener('click', () => {
       postDeviceEvent('pet_click', {
         action: 'pet_tap'
@@ -921,6 +1254,16 @@
         renderOffline(error instanceof Error ? error.message : '连接失败');
         startPolling();
         scheduleStreamReconnect();
+      });
+
+    fetchChatHistory()
+      .then((payload) => {
+        if (payload?.pending) {
+          startChatPolling();
+        }
+      })
+      .catch((error) => {
+        chatStatusEl.textContent = `聊天桥接暂不可用：${error instanceof Error ? error.message : '连接失败'}`;
       });
   </script>
 </body>

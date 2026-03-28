@@ -1,149 +1,175 @@
 # moss-desktop
 
-这是一个桌面桌宠状态终端原型，现在已经升级到 **v0.2 桥接结构**：
+一个正在演进中的 **OpenClaw 桌宠 / 小龙虾软件原型**。
 
-- `http://127.0.0.1:8848` 继续作为本地桌面页面入口
-- `server.js` 继续负责本地静态页面和桥接接口
-- `openclaw-plugin/lobster-status/` 提供 OpenClaw 侧真实状态桥
-- 页面优先走 **SSE 实时流**，失败时自动回退为轮询
-- 页面会向 OpenClaw 回传轻量设备事件，为未来接入**实体桌宠**做准备
-
----
-
-## 目录说明
-
-- `index.html`：桌面状态 UI
-- `server.js`：本地桥接服务（代理状态、SSE、设备事件）
-- `启动.bat`：一键启动本地页面服务并打开浏览器
-- `enable-openclaw-live.bat`：一键把 `lobster-status` 插件接进 OpenClaw
-- `data/state.json`：本地模拟状态存档（作为回退源）
-- `openclaw-plugin/lobster-status/`：OpenClaw 真状态插件
+当前版本已经不只是状态看板：
+- 可以展示 OpenClaw 的实时状态
+- 可以持续上报桌宠设备事件
+- 可以通过本地 bridge 把消息送进桌宠专用会话，形成 **v0.3 聊天 MVP**
 
 ---
 
 ## 当前能力
 
-### 1) OpenClaw → 桌宠
-
-插件监听这些 OpenClaw 事件：
-
-- `gateway:startup`
-- `message:received`
-- `message:sent`
-- `command:new`
-- `command:reset`
-- `command:stop`
-
-并通过这些接口暴露给桌宠：
-
+### 1. 实时状态联动
+由 `openclaw-plugin/lobster-status` 提供：
 - `GET /lobster/status`
 - `GET /lobster/health`
 - `GET /lobster/stream`
-
-### 2) 桌宠 → OpenClaw
-
-桌面页/浏览器页现在会回传轻量设备事件：
-
-- `page_load`
-- `heartbeat`
-- `visibility_change`
-- `pet_click`
-
-对应接口：
-
 - `POST /lobster/device-event`
 
-这一步是为了后面接：
-- 浏览器桌宠
-- 任务栏挂件
-- 树莓派小屏
-- ESP32 / USB 小硬件
-- 有动作和灯光反馈的实体桌宠
+状态支持：
+- `idle`
+- `thinking`
+- `replying`
+- `sleeping`
+- `error`
+- `offline`
 
----
+并且已经修复：
+- SSE 卡在旧状态的问题
+- TTL 到期不自动回落的问题
+- 前后端设备事件协议不一致的问题
+- `openclaw-control-ui / webchat` 状态不同步的问题
 
-## 本地桥接服务接口
-
-`server.js` 继续作为可选桥接层，供前端统一访问：
-
-- `GET /api/status`：优先拉取 OpenClaw 真状态；若上游未连通则显示离线；只有显式切到 `demo/manual` 时才回退到本地模拟状态
-- `GET /api/health`：查看本地桥接和 OpenClaw 探测结果
-- `GET /api/bridge`：桥接详情
-- `GET /api/stream`：代理 OpenClaw SSE 状态流
-- `POST /api/device-event`：代理设备事件写入
-- `POST /api/mode` / `POST /api/state` / `POST /api/event`：保留本地模拟能力
-
-这样网页层既可以走本地桥接，也可以像当前 `index.html` 一样直接连接 OpenClaw 插件端点。
-
----
-
-## 最快打开方式
-
-### 只看页面 / 本地模拟模式
-
-直接双击：
-
-- `启动.bat`
-
-然后浏览器访问：
-
+### 2. 本地 bridge（`server.js`）
+本地 bridge 运行在：
 - `http://127.0.0.1:8848`
 
-如果 OpenClaw 还没接好，页面默认会显示离线；要演示本地模拟状态时，再用 `/api/mode` 切到 `demo` 或 `manual`。
+负责：
+- 代理状态读取
+- 代理实时流
+- 代理设备事件写入
+- 作为桌宠聊天入口
+
+### 3. v0.3 聊天 MVP
+当前已经新增：
+- `GET /api/chat/history`
+- `POST /api/chat/send`
+- `POST /api/chat/reset`
+
+设计思路：
+- 浏览器不直接连 Gateway WebSocket
+- 改由本地 `server.js` 通过 OpenClaw 已安装的 Gateway helper 调用网关
+- 使用稳定桌宠会话（默认 `lobster:desktop`）
+- 重置会话时生成新的桌宠会话 key
+
+这是一条更适合软件阶段和未来硬件接入的路线。
 
 ---
 
-## 接入 OpenClaw 真联动
+## 目录结构
 
-第一次接入时，先运行：
+- `index.html`：桌宠主界面（状态面板 + 聊天面板）
+- `server.js`：本地 bridge 服务
+- `data/state.json`：本地状态与桌宠会话信息
+- `openclaw-plugin/lobster-status/`：OpenClaw 插件
+- `DEVELOPMENT_ROADMAP.md`：长期版本路线图
+- `启动.bat`：启动本地服务并打开页面
+- `enable-openclaw-live.bat`：把插件接入 OpenClaw 并重启 Gateway
 
-- `enable-openclaw-live.bat`
+---
 
-这个脚本会做两件事：
+## 如何启动
 
-1. 把 `openclaw-plugin/lobster-status` 通过 link 方式安装到 OpenClaw
-2. 重启 OpenClaw Gateway
-
-跑完以后，再双击：
-
+### 方式 1：直接启动桌宠本地页
+双击：
 - `启动.bat`
 
-然后打开：
-
-- `http://127.0.0.1:8848`
-
----
-
-## 可选环境变量
-
-如果你的 OpenClaw 不是默认本机地址，可以在启动 `server.js` 前设置：
-
-- `OPENCLAW_BASE_URL`，默认 `http://127.0.0.1:18789`
-- `OPENCLAW_STATUS_PATH`，默认 `/lobster/status`
-- `OPENCLAW_HEALTH_PATH`，默认 `/lobster/health`
-- `OPENCLAW_STREAM_PATH`，默认 `/lobster/stream`
-- `OPENCLAW_DEVICE_EVENT_PATH`，默认 `/lobster/device-event`
-- `OPENCLAW_READ_TOKEN`，读取状态用
-- `OPENCLAW_WRITE_TOKEN`，写设备事件用
-
-示例：
-
-```bat
-set OPENCLAW_BASE_URL=http://192.168.1.5:18789
+或手动运行：
+```bash
 node server.js
 ```
 
+然后打开：
+- `http://127.0.0.1:8848`
+
+> 注意：不要直接用 `file:///D:/moss-desktop/index.html` 打开页面。应该始终通过本地 bridge 访问。
+
 ---
 
-## 下一步建议
+## 如何接入 OpenClaw 实时状态
 
-现在这套结构已经能往“实体桌宠”继续长了，推荐下一步：
+第一次接入时先运行：
+- `enable-openclaw-live.bat`
 
-1. 增加 scene/animation 控制接口
-2. 给不同设备分配不同 deviceId 和角色
-3. 增加硬件心跳与离线判定
-4. 做表情屏 / 灯光 / 舵机动作映射
-5. 在插件里加入 agent 可调用的控制工具（如 `set_scene`）
+它会：
+1. 把 `openclaw-plugin/lobster-status` 接进 OpenClaw
+2. 重启 OpenClaw Gateway
 
-一句话总结：
-**现在它不只是网页看板，而是一个未来可接实体桌宠的 OpenClaw 桥。**
+之后再启动本地页即可。
+
+---
+
+## 如何测试 v0.3 聊天 MVP
+
+1. 确保 OpenClaw Gateway 正在运行
+2. 启动本地 bridge：`node server.js`
+3. 打开 `http://127.0.0.1:8848`
+4. 在右侧聊天面板输入一句话发送
+5. 观察：
+   - 状态从 `idle` → `thinking / replying` → `idle`
+   - 聊天面板中出现用户消息和小龙虾回复
+   - “新会话”按钮会创建新的桌宠专用 session
+
+聊天 API：
+- `GET /api/chat/history`
+- `POST /api/chat/send`
+- `POST /api/chat/reset`
+
+---
+
+## 本地 bridge 设计说明
+
+聊天 bridge 不走浏览器直连 Gateway，原因是：
+- 直接浏览器 / 原始 WebSocket 接入容易撞上 origin / device identity 限制
+- 纯软件阶段更适合让本地 Node 服务做代理
+- 以后接硬件时，也更容易把这层直接复用成统一协议层
+
+当前 bridge 通过 OpenClaw 已安装的内部 helper 调用 Gateway：
+- `C:/Users/22414/AppData/Roaming/npm/node_modules/openclaw/dist/call-DTKTDk3E.js`
+
+并从：
+- `C:/Users/22414/.openclaw/openclaw.json`
+
+读取网关 token。
+
+---
+
+## 当前仍未完成的 v0.3 项
+
+这版已经能聊天，但还只是 MVP。后续仍建议继续补：
+- 更好的流式回复（当前以历史轮询为主）
+- 更明确的聊天运行态 / run 状态接口
+- 消息中的工具事件折叠显示
+- 会话列表 / 最近会话切换
+- 更像桌宠而不是网页聊天框的 UI 体验
+
+---
+
+## 下一步推荐
+
+优先继续推进：
+1. 聊天流式体验优化
+2. 桌宠动作 / 表情系统
+3. 场景系统
+4. 语音输入输出
+5. 多设备 / 硬件协议抽象
+
+详见：
+- `DEVELOPMENT_ROADMAP.md`
+
+---
+
+## 协作方式
+
+以后可以直接基于路线图推进，例如：
+- “按路线图继续做 v0.3”
+- “把聊天轮询升级成流式”
+- “先做动作系统，不做语音”
+- “对照路线图检查当前进度”
+
+默认偏好：
+- 写代码和审代码时，优先调用 Codex
+- 大功能按阶段推进
+- 先保证闭环，再加花活

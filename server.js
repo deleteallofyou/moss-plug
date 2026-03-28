@@ -3,7 +3,7 @@ const https = require('node:https');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-const { URL } = require('node:url');
+const { URL, pathToFileURL } = require('node:url');
 
 const HOST = '127.0.0.1';
 const PORT = 8848;
@@ -19,6 +19,10 @@ const OPENCLAW_DEVICE_EVENT_PATH = process.env.OPENCLAW_DEVICE_EVENT_PATH || '/l
 const OPENCLAW_READ_TOKEN = process.env.OPENCLAW_READ_TOKEN || '';
 const OPENCLAW_WRITE_TOKEN = process.env.OPENCLAW_WRITE_TOKEN || '';
 const OPENCLAW_SESSION_ROOT = process.env.OPENCLAW_SESSION_ROOT || path.join(os.homedir(), '.openclaw', 'agents', 'main', 'sessions');
+const OPENCLAW_CONFIG_FILE = process.env.OPENCLAW_CONFIG_FILE || path.join(os.homedir(), '.openclaw', 'openclaw.json');
+const OPENCLAW_GATEWAY_HELPER = process.env.OPENCLAW_GATEWAY_HELPER || path.join(process.env.APPDATA || '', 'npm', 'node_modules', 'openclaw', 'dist', 'call-DTKTDk3E.js');
+const DESKTOP_CHAT_SESSION_KEY = process.env.DESKTOP_CHAT_SESSION_KEY || 'lobster:desktop';
+const CHAT_POLL_WINDOW_MS = 45 * 1000;
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -114,6 +118,8 @@ function ensureDefaultStore() {
       lastEvent: 'gateway:startup',
       lastEventTs: now,
       deviceName: 'moss-desktop',
+      chatSessionKey: DESKTOP_CHAT_SESSION_KEY,
+      chatResetCount: 0,
     };
     fs.writeFileSync(STATE_FILE, JSON.stringify(initial, null, 2), 'utf8');
   }
@@ -122,7 +128,18 @@ function ensureDefaultStore() {
 function loadStore() {
   ensureDefaultStore();
   try {
-    return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+    const parsed = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+    return {
+      sourceMode: 'event-sim',
+      manualState: 'idle',
+      demoStartedAt: Date.now(),
+      lastEvent: 'gateway:startup',
+      lastEventTs: Date.now(),
+      deviceName: 'moss-desktop',
+      chatSessionKey: DESKTOP_CHAT_SESSION_KEY,
+      chatResetCount: 0,
+      ...parsed,
+    };
   } catch {
     const now = Date.now();
     return {
@@ -132,6 +149,8 @@ function loadStore() {
       lastEvent: 'gateway:startup',
       lastEventTs: now,
       deviceName: 'moss-desktop',
+      chatSessionKey: DESKTOP_CHAT_SESSION_KEY,
+      chatResetCount: 0,
     };
   }
 }
@@ -302,6 +321,256 @@ async function forwardDeviceEventToOpenClaw(body) {
   }
 
   return response.json();
+}
+
+let gatewayHelperPromise = null;
+
+function readGatewayTokenFromConfig() {
+  if (OPENCLAW_WRITE_TOKEN) return OPENCLAW_WRITE_TOKEN;
+  if (OPENCLAW_READ_TOKEN) return OPENCLAW_READ_TOKEN;
+
+  try {
+    const config = JSON.parse(fs.readFileSync(OPENCLAW_CONFIG_FILE, 'utf8'));
+    return config?.gateway?.auth?.token || '';
+  } catch {
+    return '';
+  }
+}
+
+async function loadGatewayHelper() {
+  if (!gatewayHelperPromise) {
+    gatewayHelperPromise = import(pathToFileURL(OPENCLAW_GATEWAY_HELPER).href);
+  }
+  return gatewayHelperPromise;
+}
+
+async function callGatewayMethod(method, params = {}, timeoutMs = 45000) {
+  const token = readGatewayTokenFromConfig();
+  if (!token) {
+    throw new Error('OpenClaw gateway token is unavailable.');
+  }
+
+  const helper = await loadGatewayHelper();
+  const gatewayCall = helper.i || helper.r;
+  if (typeof gatewayCall !== 'function') {
+    throw new Error('OpenClaw gateway helper did not expose a callable API.');
+  }
+
+  return gatewayCall({
+    url: OPENCLAW_BASE_URL.replace(/^http/, 'ws'),
+    token,
+    method,
+    params,
+    timeoutMs,
+  });
+}
+
+function getCurrentChatSessionKey() {
+  const store = loadStore();
+  return store.chatSessionKey || DESKTOP_CHAT_SESSION_KEY;
+}
+
+function createNextChatSessionKey() {
+  return `${DESKTOP_CHAT_SESSION_KEY}:${Date.now()}`;
+}
+
+function extractTextParts(content) {
+  if (!Array.isArray(content)) return [];
+  return content
+    .map((part) => {
+      if (!part || typeof part !== 'object') return '';
+      if (part.type === 'text' && typeof part.text === 'string') return part.text;
+      if (part.type === 'input_text' && typeof part.text === 'string') return part.text;
+      if (part.type === 'output_text' && typeof part.text === 'string') return part.text;
+      return '';
+    })
+    .filter(Boolean);
+}
+
+function extractMessageText(message) {
+  return extractTextParts(message?.content).join('\n').trim();
+}
+
+function normalizeChatMessage(message) {
+  const role = message?.role;
+  const timestamp = message?.timestamp || null;
+  const id = message?.__openclaw?.id || `${role || 'message'}-${timestamp || Date.now()}`;
+
+  if (role === 'assistant' && message?.stopReason === 'error' && message?.errorMessage) {
+    return {
+      id,
+      role: 'system',
+      text: `本轮回复失败：${message.errorMessage}`,
+      timestamp,
+      senderLabel: null,
+      isError: true,
+    };
+  }
+
+  if (role !== 'user' && role !== 'assistant') {
+    return null;
+  }
+
+  const text = extractMessageText(message);
+  if (!text) {
+    return null;
+  }
+
+  return {
+    id,
+    role,
+    text,
+    timestamp,
+    senderLabel: message?.senderLabel || null,
+    isError: false,
+  };
+}
+
+function inferChatPending(historyMessages, visibleMessages) {
+  const lastVisibleAssistantTs = [...visibleMessages]
+    .reverse()
+    .find((entry) => entry.role === 'assistant')?.timestamp;
+  const lastVisibleUserTs = [...visibleMessages]
+    .reverse()
+    .find((entry) => entry.role === 'user')?.timestamp;
+
+  const lastHistory = Array.isArray(historyMessages) ? historyMessages[historyMessages.length - 1] : null;
+  if (!lastHistory) return false;
+
+  if (lastHistory.role === 'assistant' && lastHistory.stopReason === 'error') {
+    return false;
+  }
+
+  if (lastVisibleUserTs && (!lastVisibleAssistantTs || lastVisibleAssistantTs < lastVisibleUserTs)) {
+    return true;
+  }
+
+  if (lastHistory.role === 'user') return true;
+  if (lastHistory.role === 'toolResult') return true;
+  if (lastHistory.role === 'assistant' && !extractMessageText(lastHistory)) return true;
+  return false;
+}
+
+function readRecentSessionMessageState(sessionId) {
+  if (!sessionId) return null;
+
+  const filePath = path.join(OPENCLAW_SESSION_ROOT, `${sessionId}.jsonl`);
+  const lines = readRecentLines(filePath, 80);
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    try {
+      const entry = JSON.parse(lines[i]);
+      if (entry?.type !== 'message' || !entry?.message) continue;
+      const message = entry.message;
+      if (message.role === 'assistant' && message.stopReason === 'error' && message.errorMessage) {
+        return {
+          kind: 'error',
+          timestamp: message.timestamp || entry.timestamp || null,
+          text: `本轮回复失败：${message.errorMessage}`,
+        };
+      }
+      if (message.role === 'assistant' && extractMessageText(message)) {
+        return {
+          kind: 'assistant',
+          timestamp: message.timestamp || entry.timestamp || null,
+        };
+      }
+      if (message.role === 'user') {
+        return {
+          kind: 'user',
+          timestamp: message.timestamp || entry.timestamp || null,
+        };
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
+async function resolveChatHistoryPayload(limit = 24) {
+  const sessionKey = getCurrentChatSessionKey();
+  const history = await callGatewayMethod('chat.history', {
+    sessionKey,
+    limit: Math.max(1, Math.min(Number(limit) || 24, 60)),
+  }, 30000);
+
+  const visibleMessages = (Array.isArray(history?.messages) ? history.messages : [])
+    .map(normalizeChatMessage)
+    .filter(Boolean);
+
+  const latestSessionState = readRecentSessionMessageState(history?.sessionId);
+  let pending = inferChatPending(history?.messages, visibleMessages);
+  const lastMessage = visibleMessages[visibleMessages.length - 1] || null;
+  let lastError = [...visibleMessages].reverse().find((entry) => entry.isError) || null;
+
+  if (latestSessionState?.kind === 'error') {
+    pending = false;
+    lastError = {
+      id: `error-${history?.sessionId || 'session'}`,
+      role: 'system',
+      text: latestSessionState.text,
+      timestamp: latestSessionState.timestamp,
+      senderLabel: null,
+      isError: true,
+    };
+
+    if (!visibleMessages.find((entry) => entry.id === lastError.id || (entry.role === 'system' && entry.text === lastError.text && entry.timestamp === lastError.timestamp))) {
+      visibleMessages.push(lastError);
+    }
+  }
+
+  return {
+    ok: true,
+    sessionKey,
+    sessionId: history?.sessionId || null,
+    thinkingLevel: history?.thinkingLevel || null,
+    pending,
+    status: lastError ? 'error' : (pending ? 'thinking' : 'idle'),
+    lastMessage,
+    lastError,
+    messages: visibleMessages,
+  };
+}
+
+async function sendChatMessage(message) {
+  const text = String(message || '').trim();
+  if (!text) {
+    throw new Error('message_required');
+  }
+
+  const sessionKey = getCurrentChatSessionKey();
+  const helper = await loadGatewayHelper();
+  const randomId = typeof helper.c === 'function' ? helper.c : () => String(Date.now());
+  const result = await callGatewayMethod('chat.send', {
+    sessionKey,
+    message: text,
+    deliver: false,
+    idempotencyKey: randomId(),
+  }, 45000);
+
+  return {
+    ok: true,
+    sessionKey,
+    runId: result?.runId || null,
+    status: result?.status || 'started',
+  };
+}
+
+function resetChatSession() {
+  const store = loadStore();
+  const nextSessionKey = createNextChatSessionKey();
+  store.chatSessionKey = nextSessionKey;
+  store.chatResetCount = Number(store.chatResetCount || 0) + 1;
+  saveStore(store);
+  return {
+    ok: true,
+    sessionKey: nextSessionKey,
+    resetCount: store.chatResetCount,
+    messages: [],
+    pending: false,
+    status: 'idle',
+  };
 }
 
 function proxyOpenClawStream(req, res) {
@@ -697,6 +966,24 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === 'GET' && pathname === '/api/chat/history') {
+      const limit = requestUrl.searchParams.get('limit');
+      sendJson(res, 200, await resolveChatHistoryPayload(limit ? Number(limit) : 24));
+      return;
+    }
+
+    if (req.method === 'POST' && pathname === '/api/chat/send') {
+      const body = await readBody(req);
+      const result = await sendChatMessage(body.message);
+      sendJson(res, 200, result);
+      return;
+    }
+
+    if (req.method === 'POST' && pathname === '/api/chat/reset') {
+      sendJson(res, 200, resetChatSession());
+      return;
+    }
+
     if (req.method === 'GET' && pathname === '/api/store') {
       sendJson(res, 200, loadStore());
       return;
@@ -767,6 +1054,7 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'POST' && pathname === '/api/reset') {
       const now = Date.now();
+      const previous = loadStore();
       const store = {
         sourceMode: 'event-sim',
         manualState: 'idle',
@@ -774,6 +1062,8 @@ const server = http.createServer(async (req, res) => {
         lastEvent: 'gateway:startup',
         lastEventTs: now,
         deviceName: 'moss-desktop',
+        chatSessionKey: previous.chatSessionKey || DESKTOP_CHAT_SESSION_KEY,
+        chatResetCount: Number(previous.chatResetCount || 0),
       };
       saveStore(store);
       sendJson(res, 200, deriveLocalStatus(store));
