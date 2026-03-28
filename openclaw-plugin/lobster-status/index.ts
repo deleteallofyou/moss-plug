@@ -77,6 +77,75 @@ function inferSnapshotFromGatewayLog(): RuntimeSnapshot | null {
   return null;
 }
 
+function readRecentLines(filePath: string, maxLines = 120) {
+  try {
+    const content = fs.readFileSync(filePath, "utf8");
+    return content.split(/\r?\n/).filter(Boolean).slice(-maxLines);
+  } catch {
+    return [];
+  }
+}
+
+function inferSnapshotFromSessionFiles() {
+  const sessionRoot = path.join(os.homedir(), ".openclaw", "agents", "main", "sessions");
+  if (!fs.existsSync(sessionRoot)) {
+    return null;
+  }
+
+  try {
+    const files = fs.readdirSync(sessionRoot)
+      .filter((name) => name.endsWith(".jsonl") && !name.includes(".reset."))
+      .map((name) => {
+        const filePath = path.join(sessionRoot, name);
+        const stat = fs.statSync(filePath);
+        return { filePath, mtimeMs: stat.mtimeMs };
+      })
+      .sort((a, b) => b.mtimeMs - a.mtimeMs)
+      .slice(0, 5);
+
+    let latest: RuntimeSnapshot | null = null;
+    for (const file of files) {
+      const lines = readRecentLines(file.filePath, 150);
+      for (let i = lines.length - 1; i >= 0; i -= 1) {
+        try {
+          const entry = JSON.parse(lines[i]);
+          if (entry?.type !== "message") continue;
+          const role = entry?.message?.role;
+          if (role !== "user" && role !== "assistant") continue;
+          const ts = parseIsoTs(entry?.timestamp)
+            || parseIsoTs(entry?.message?.timestamp)
+            || (typeof entry?.timestamp === "number" ? entry.timestamp : null)
+            || (typeof entry?.message?.timestamp === "number" ? entry.message.timestamp : null);
+          if (!ts || !Number.isFinite(ts)) continue;
+
+          const snapshot: RuntimeSnapshot = {
+            lastEvent: role === "user" ? "message:received" : "message:sent",
+            ts,
+            source: "session-log",
+          };
+
+          if (!latest || snapshot.ts > latest.ts) {
+            latest = snapshot;
+          }
+          break;
+        } catch {
+          continue;
+        }
+      }
+    }
+
+    return latest;
+  } catch {
+    return null;
+  }
+}
+
+function pickLatestSnapshot(...snapshots: Array<RuntimeSnapshot | null | undefined>) {
+  return snapshots
+    .filter((snapshot): snapshot is RuntimeSnapshot => !!snapshot)
+    .sort((a, b) => b.ts - a.ts)[0] ?? null;
+}
+
 function readRequestBody(req: IncomingMessage, maxBytes = 8 * 1024) {
   return new Promise<Record<string, unknown>>((resolve, reject) => {
     const chunks: Buffer[] = [];
@@ -154,14 +223,54 @@ export default function register(api: any) {
 
   const store = new StateStore(cfg.stateFile);
   const sseBus = cfg.enableSse ? new SseBus() : null;
+  let transitionTimer: NodeJS.Timeout | null = null;
+
+  function getTransitionDelay(snapshot: RuntimeSnapshot | null | undefined) {
+    if (!snapshot) return null;
+
+    const now = Date.now();
+    const ageMs = Math.max(0, now - snapshot.ts);
+
+    if (snapshot.lastEvent === "message:received") {
+      const remaining = cfg.thinkingTtlMs - ageMs;
+      return remaining > 0 ? remaining + 25 : null;
+    }
+
+    if (snapshot.lastEvent === "message:sent") {
+      const remaining = cfg.replyingTtlMs - ageMs;
+      return remaining > 0 ? remaining + 25 : null;
+    }
+
+    return null;
+  }
+
+  function scheduleTransitionBroadcast(snapshot: RuntimeSnapshot | null | undefined) {
+    if (transitionTimer) {
+      clearTimeout(transitionTimer);
+      transitionTimer = null;
+    }
+
+    const delay = getTransitionDelay(snapshot);
+    if (delay == null) return;
+
+    transitionTimer = setTimeout(() => {
+      transitionTimer = null;
+      broadcastStatus();
+    }, delay);
+  }
 
   function getStatusPayload() {
     const state = store.getState();
-    const inferred = inferSnapshotFromGatewayLog();
     const stored = state.runtimeSnapshot;
+    const inferred = pickLatestSnapshot(
+      inferSnapshotFromGatewayLog(),
+      inferSnapshotFromSessionFiles(),
+      stored,
+    );
 
-    if (inferred && (!stored || inferred.ts >= stored.ts)) {
+    if (inferred && (!stored || inferred.ts >= stored.ts || inferred.source !== stored.source)) {
       store.setRuntimeSnapshot(inferred);
+      scheduleTransitionBroadcast(inferred);
       return deriveStatus({ ...state, runtimeSnapshot: inferred }, cfg);
     }
 
@@ -170,17 +279,23 @@ export default function register(api: any) {
 
   function broadcastStatus() {
     if (!sseBus) return;
-    sseBus.broadcast("status", getStatusPayload());
+    const payload = getStatusPayload();
+    sseBus.broadcast("status", payload);
+    scheduleTransitionBroadcast(payload.runtimeSnapshot);
   }
 
   function updateRuntime(lastEvent: RuntimeEventType, extra: Partial<RuntimeSnapshot> = {}) {
-    store.setRuntimeSnapshot({
+    const snapshot = {
       lastEvent,
       ts: Date.now(),
       ...extra,
-    });
+    };
+    store.setRuntimeSnapshot(snapshot);
+    scheduleTransitionBroadcast(snapshot);
     broadcastStatus();
   }
+
+  scheduleTransitionBroadcast(store.getState().runtimeSnapshot);
 
   api.registerHook("gateway:startup", async () => {
     updateRuntime("gateway:startup", { source: "plugin" });

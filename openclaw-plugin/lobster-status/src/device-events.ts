@@ -1,11 +1,15 @@
 import crypto from "node:crypto";
 import type { DeviceEvent, DeviceEventName, DeviceEventMeta } from "./types.js";
 
-const ALLOWED_DEVICE_EVENTS = new Set<DeviceEventName>([
+type AcceptedDeviceEventName = DeviceEventName | "wake" | "button_click";
+
+const ALLOWED_DEVICE_EVENTS = new Set<AcceptedDeviceEventName>([
   "page_load",
   "visibility_change",
   "pet_click",
   "heartbeat",
+  "wake",
+  "button_click",
 ]);
 
 const MAX_META_KEYS = 8;
@@ -22,6 +26,16 @@ function sanitizeMetaValue(value: unknown): string | number | boolean | null {
   return truncateString(String(value));
 }
 
+function normalizeVisibleValue(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") return value;
+  if (typeof value !== "string") return undefined;
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "visible") return true;
+  if (normalized === "hidden") return false;
+  return undefined;
+}
+
 function sanitizeMeta(meta: unknown): DeviceEventMeta | undefined {
   if (!meta || typeof meta !== "object" || Array.isArray(meta)) {
     return undefined;
@@ -36,7 +50,9 @@ function sanitizeMeta(meta: unknown): DeviceEventMeta | undefined {
     deviceName: typeof sanitized.deviceName === "string" ? sanitized.deviceName : undefined,
     source: typeof sanitized.source === "string" ? sanitized.source : undefined,
     path: typeof sanitized.path === "string" ? sanitized.path : undefined,
-    visible: typeof sanitized.visible === "boolean" ? sanitized.visible : undefined,
+    visible: typeof sanitized.visible === "boolean"
+      ? sanitized.visible
+      : normalizeVisibleValue(sanitized.visibility),
   };
 }
 
@@ -54,8 +70,14 @@ function normalizeTimestamp(value: unknown, now: number) {
   return now;
 }
 
-export function isAllowedDeviceEvent(value: unknown): value is DeviceEventName {
-  return typeof value === "string" && ALLOWED_DEVICE_EVENTS.has(value as DeviceEventName);
+function normalizeDeviceEventName(value: AcceptedDeviceEventName): DeviceEventName {
+  if (value === "wake") return "page_load";
+  if (value === "button_click") return "pet_click";
+  return value;
+}
+
+export function isAllowedDeviceEvent(value: unknown): value is AcceptedDeviceEventName {
+  return typeof value === "string" && ALLOWED_DEVICE_EVENTS.has(value as AcceptedDeviceEventName);
 }
 
 export function normalizeDeviceEventPayload(
@@ -83,7 +105,7 @@ export function normalizeDeviceEventPayload(
       : undefined,
     visible: typeof (body as Record<string, unknown>).visible === "boolean"
       ? (body as Record<string, unknown>).visible as boolean
-      : undefined,
+      : normalizeVisibleValue((body as Record<string, unknown>).visibility),
   };
 
   const nestedMeta = sanitizeMeta((body as Record<string, unknown>).meta);
@@ -93,7 +115,7 @@ export function normalizeDeviceEventPayload(
     event: {
       id: crypto.randomUUID(),
       deviceId: normalizeDeviceId((body as Record<string, unknown>).deviceId),
-      event: eventName,
+      event: normalizeDeviceEventName(eventName),
       ts: normalizeTimestamp((body as Record<string, unknown>).ts, now),
       meta: {
         ...nestedMeta,

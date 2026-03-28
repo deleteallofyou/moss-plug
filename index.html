@@ -422,6 +422,7 @@
     const HEARTBEAT_MS = 30000;
     const POLL_MS = 1500;
     const STREAM_RETRY_MS = 3000;
+    const SSE_SYNC_MS = 10000;
     const DEVICE_ID_STORAGE_KEY = 'mossDesktopDeviceId';
 
     const STATUS_LABELS = {
@@ -447,8 +448,10 @@
       'command:new': '新会话',
       'command:reset': '重置会话',
       'command:stop': '进入休眠',
+      page_load: '页面加载',
       wake: '设备唤醒',
       visibility_change: '可见性变化',
+      pet_click: '点击桌宠',
       button_click: '点击桌宠',
       heartbeat: '设备心跳',
       offline: '离线'
@@ -487,6 +490,7 @@
     let lastPayload = null;
     let pollTimer = null;
     let heartbeatTimer = null;
+    let syncTimer = null;
     let streamSource = null;
     let streamRetryTimer = null;
 
@@ -735,6 +739,7 @@
           source: DEVICE_SOURCE,
           path: location.pathname || '/',
           visibility: document.visibilityState,
+          visible: document.visibilityState === 'visible',
           ...extra
         }
       };
@@ -872,15 +877,26 @@
       }, HEARTBEAT_MS);
     }
 
+    function startSseSync() {
+      if (syncTimer) return;
+      syncTimer = setInterval(() => {
+        if (transportMode !== 'sse') return;
+        fetchStatus().catch(() => {
+          // SSE 已连接时，低频兜底同步失败不主动打断当前 UI
+        });
+      }, SSE_SYNC_MS);
+    }
+
     faceWrapEl.addEventListener('click', () => {
-      postDeviceEvent('button_click', {
+      postDeviceEvent('pet_click', {
         action: 'pet_tap'
       });
     });
 
     document.addEventListener('visibilitychange', () => {
       postDeviceEvent('visibility_change', {
-        visibility: document.visibilityState
+        visibility: document.visibilityState,
+        visible: document.visibilityState === 'visible'
       });
     });
 
@@ -890,7 +906,8 @@
     renderOffline('正在连接 OpenClaw 网关');
 
     startHeartbeat();
-    postDeviceEvent('wake');
+    startSseSync();
+    postDeviceEvent('page_load');
 
     fetchStatus()
       .then((payload) => {
